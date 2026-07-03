@@ -1,0 +1,210 @@
+# h3yun-sql-troubleshooter
+
+一个用于辅助 AI 排查氚云问题的 MCP 服务。`h3yun` 是氚云平台的英文标识。AI 可以调用 `query_sql` 工具，把 SQL 发送到氚云平台接口，由平台执行后返回查询结果。
+
+本项目的接口调用方式参考了 `h3yun-cmax` VSCode 插件：默认氚云地址为 `https://www.h3yun.com`，鉴权使用 `Authorization: Bearer h3_token`，并通过请求头 `enginecode` 传入企业引擎编码。
+
+如果当前氚云 CMAX 项目目录下存在 `.h3token` 和 `cmax.json`，MCP 会自动读取它们：
+
+- `.h3token`：保存氚云接口身份校验参数，也就是浏览器 Cookie 中的 `h3_token` 值。
+- `cmax.json`：其中的 `engineCode` 是氚云企业引擎编码。
+
+如果调用 MCP 时没有找到这些文件，也没有配置对应环境变量，工具会提示用户提供 Token 或 engineCode。
+
+MCP 不要求 AI 工具全局配置固定项目目录。实际工作区可以是氚云应用目录本身，也可以是它的上级目录。例如：
+
+```text
+C:\workspace\h3yun-projects
+└── 示例应用(a12345)
+    ├── cmax.json
+    └── .h3token
+```
+
+如果 AI 当前工作区是 `h3yun-projects`，工具会向下有限层级自动发现 `示例应用(a12345)` 这个氚云应用目录。如果同一个工作区下发现多个氚云应用目录，工具会提示 AI 在调用 `query_sql` 时通过 `projectDir` 指定当前项目。
+
+## 功能
+
+- 通过 MCP stdio 协议提供工具给 AI 客户端调用。
+- 暴露 `query_sql` 工具，用于执行只读 SQL 排查真实数据。
+- 暴露 `get_h3yun_sql_troubleshooting_guide` 工具，用于告诉 AI 如何根据项目文件定位表单、字段和数据库表。
+- 默认使用内置的氚云平台 SQL 接口地址，确认接口路径后不需要在 AI 工具里重复配置。
+- 未配置鉴权环境变量时，可自动读取项目目录下的 `.h3token` 和 `cmax.json.engineCode`。
+- 默认只允许 `select`、`with`、`show`、`describe`、`desc`、`explain` 等查询类 SQL。
+
+## AI 使用规则
+
+当用户排查氚云业务问题、表单数据异常、字段值异常、关联数据异常、流程或审批异常、业务规则执行结果异常、线上数据不一致时，AI 应主动考虑使用本 MCP 查询真实数据，而不是要求用户手动查数据库。
+
+在构造 SQL 前，AI 应优先参考当前项目中的这些文件：
+
+- 项目根目录的 `cmax.json`：记录整个应用下的所有表单编码和表单名称。
+- 各表单目录下的 `fields.md`：记录表单名、字段名、控件编码等字段信息。
+- 项目根目录的 `.h3token`：记录氚云接口身份校验参数。
+
+这里的“项目根目录”指包含 `cmax.json` 和 `.h3token` 的氚云应用目录。AI 当前打开的工作区可以是该目录的上级目录，MCP 会自动向下搜索。
+
+`cmax.json` 中的 `engineCode` 是氚云企业引擎编码，MCP 可直接读取并作为请求头 `enginecode` 使用。
+
+氚云数据库表名规则：
+
+- 业务表名通常是 `i_表单编码`。
+- 系统表通常以 `h_` 开头。
+
+涉及 `h_` 系统表时，AI 应优先参考氚云系统表说明文档：
+
+https://h3yunpro.github.io/docs/database/
+
+该文档包含氚云所有系统表的说明，可用于确认流程、审批、组织、系统元数据等系统表的用途和字段含义。
+
+如果用户只提供了表单名称，应先通过 `cmax.json` 找到表单编码，再按 `i_表单编码` 拼出业务表名。如果用户只提供了字段中文名，应先通过对应表单的 `fields.md` 找到控件编码，再构造 SQL。
+
+## 安装
+
+```bash
+npm install
+```
+
+## 本地启动
+
+```bash
+npx h3yun-sql-troubleshooter
+```
+
+PowerShell 示例：
+
+```powershell
+npx h3yun-sql-troubleshooter
+```
+
+正常使用时不需要在 AI 工具里配置项目目录。AI 在不同项目上工作时，可以把当前工作区路径作为 `projectDir` 传给 `query_sql`；如果没有传入，工具会尝试从当前进程工作目录向上查找，也会向下有限层级搜索 `cmax.json` 和 `.h3token`。
+
+如果项目目录下没有 `.h3token` 或 `cmax.json`，才需要通过环境变量临时提供：
+
+```powershell
+$env:H3YUN_TOKEN="your-h3-token"
+$env:H3YUN_ENGINE_CODE="your-engine-code"
+npx h3yun-sql-troubleshooter
+```
+
+如果氚云 SQL 接口路径发生变化，才需要临时覆盖接口地址：
+
+```powershell
+$env:H3YUN_SQL_API_URL="https://www.h3yun.com/your-sql-api-path"
+npx h3yun-sql-troubleshooter
+```
+
+## MCP 客户端配置示例
+
+```json
+{
+  "mcpServers": {
+    "h3yun-sql-troubleshooter": {
+      "command": "npx",
+      "args": ["h3yun-sql-troubleshooter"]
+    }
+  }
+}
+```
+
+如果当前包还没有发布到 npm，也可以在本机开发目录中这样配置：
+
+```json
+{
+  "mcpServers": {
+    "h3yun-sql-troubleshooter": {
+      "command": "node",
+      "args": ["D:/ai/test/h3yun-sql-troubleshooter/src/index.js"]
+    }
+  }
+}
+```
+
+## 环境变量
+
+| 变量 | 必填 | 默认值 | 说明 |
+| --- | --- | --- | --- |
+| `H3YUN_BASE_URL` | 否 | `https://www.h3yun.com` | 氚云平台基础地址 |
+| `H3YUN_SQL_API_URL` | 否 | 内置默认地址 | 完整 SQL 查询接口地址；仅接口地址变化时覆盖 |
+| `H3YUN_SQL_API_PATH` | 否 | 内置默认路径 | SQL 查询接口路径；未配置 `H3YUN_SQL_API_URL` 时会和 `H3YUN_BASE_URL` 拼接 |
+| `H3YUN_PROJECT_DIR` | 否 | 自动发现 | 氚云 CMAX 项目目录或其上级目录。通常不需要配置，优先由 AI 调用工具时传入当前工作区路径 |
+| `H3YUN_TOKEN` | 条件必填 | 自动读取 `.h3token` | 从浏览器 Cookie 中获取的 `h3_token` 值 |
+| `H3YUN_ENGINE_CODE` | 条件必填 | 自动读取 `cmax.json.engineCode` | 氚云企业引擎编码 `enginecode` |
+| `H3YUN_SQL_FIELD` | 否 | `sql` | 请求体中 SQL 字段名 |
+| `H3YUN_SQL_CONTENT_TYPE` | 否 | `json` | 请求体格式，支持 `json` 或 `form`。`form` 会按 `PostData=encodeURIComponent(JSON.stringify(payload))` 发送 |
+| `H3YUN_SQL_TIMEOUT_MS` | 否 | `30000` | 请求超时时间 |
+| `H3YUN_SQL_ALLOW_WRITE` | 否 | `false` | 是否允许非查询 SQL |
+
+## 氚云平台接口约定
+
+服务会向内置的氚云 SQL 查询接口发送 `POST` 请求，也就是把 AI 生成的 SQL 转发给氚云平台接口执行。只有接口地址变化时，才需要用 `H3YUN_SQL_API_URL` 或 `H3YUN_SQL_API_PATH` 覆盖。
+
+默认请求头：
+
+```http
+Accept: application/json
+Content-Type: application/json;charset=UTF-8
+Authorization: Bearer your-h3-token
+enginecode: your-engine-code
+```
+
+默认请求体：
+
+```json
+{
+  "sql": "select * from users limit 10",
+  "params": {},
+  "reason": "排查用户登录异常"
+}
+```
+
+如果氚云平台接口要求的字段名不是 `sql`，可以通过 `H3YUN_SQL_FIELD` 修改。
+
+如果接口沿用氚云后台常见的 `PostData=...` 表单提交方式，可以配置：
+
+```powershell
+$env:H3YUN_SQL_CONTENT_TYPE="form"
+```
+
+此时请求体会变成：
+
+```text
+PostData=%7B%22sql%22%3A%22select%20*%20from%20users%20limit%2010%22%7D
+```
+
+## 响应处理
+
+服务会兼容氚云常见响应结构：
+
+```json
+{
+  "Successful": true,
+  "Errors": [],
+  "ReturnData": []
+}
+```
+
+- 如果 `Errors` 不为空，会作为错误返回给 AI。
+- 如果 `Successful` 为 `false`，会作为错误返回给 AI。
+- 如果存在 `ReturnData`，工具结果只返回 `ReturnData`。
+- 如果不存在 `ReturnData`，工具结果返回完整响应。
+
+## 工具入参
+
+`query_sql` 支持：
+
+```json
+{
+  "sql": "select * from orders where id = 'xxx'",
+  "params": {
+    "traceId": "optional"
+  },
+  "projectDir": "D:/your/cmax-project",
+  "reason": "说明为什么要查这条 SQL"
+}
+```
+
+`projectDir` 是可选参数，可以传氚云应用目录，也可以传它的上级工作区目录。未传入时，工具会依次尝试从 `H3YUN_PROJECT_DIR`、`INIT_CWD`、当前工作目录查找；查找方式包括向上查找和向下有限层级搜索 `cmax.json`、`.h3token`。
+
+不建议在 AI 工具的全局 MCP 配置中写死 `projectDir`，因为你可能同时处理多个氚云项目。更好的方式是由 AI 在调用工具时传入当前项目工作区路径。
+
+`get_h3yun_sql_troubleshooting_guide` 不需要入参，返回固定的氚云 SQL 排查指南。
