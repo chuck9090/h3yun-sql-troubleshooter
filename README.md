@@ -130,50 +130,86 @@ npx h3yun-sql-troubleshooter
 | `H3YUN_TOKEN` | 条件必填 | 自动读取 `.h3token` | 从浏览器 Cookie 中获取的 `h3_token` 值 |
 | `H3YUN_ENGINE_CODE` | 条件必填 | 自动读取 `cmax.json.engineCode` | 氚云企业引擎编码 `enginecode` |
 | `H3YUN_SQL_FIELD` | 否 | `sql` | 请求体中 SQL 字段名 |
-| `H3YUN_SQL_CONTENT_TYPE` | 否 | `json` | 请求体格式，支持 `json` 或 `form`。`form` 会按 `PostData=encodeURIComponent(JSON.stringify(payload))` 发送 |
 | `H3YUN_SQL_TIMEOUT_MS` | 否 | `30000` | 请求超时时间 |
 | `H3YUN_SQL_ALLOW_WRITE` | 否 | `false` | 是否允许非查询 SQL |
 
 ## 氚云平台接口约定
 
-服务会向内置的氚云 SQL 查询接口发送 `POST` 请求，也就是把 AI 生成的 SQL 转发给氚云平台接口执行。只有接口地址变化时，才需要用 `H3YUN_SQL_API_URL` 或 `H3YUN_SQL_API_PATH` 覆盖。
+服务会向内置的氚云 SQL 预览接口发送 `POST` 请求，也就是把 AI 生成的 SQL 转发给氚云平台接口执行。默认接口路径：
+
+```text
+/rx-report/integrate/data-source/v1/customsql/previewSql
+```
+
+只有接口地址变化时，才需要用 `H3YUN_SQL_API_URL` 或 `H3YUN_SQL_API_PATH` 覆盖。
 
 默认请求头：
 
 ```http
-Accept: application/json
-Content-Type: application/json;charset=UTF-8
-Authorization: Bearer your-h3-token
-enginecode: your-engine-code
+Accept: application/json, text/plain, */*
+Accept-Language: zh-CN
+Authorization: Bearer <自动读取的 h3_token>
+Content-Type: application/json
+EngineCode: <cmax.json.engineCode 或 JWT 中的 enginecode>
+Origin: https://www.h3yun.com
+Referer: https://www.h3yun.com/home.html
 ```
+
+当前不会发送 `UserId` 请求头。请求体中的 `config.userId` 会传空字符串。
 
 默认请求体：
 
 ```json
 {
-  "sql": "select * from users limit 10",
-  "params": {},
-  "reason": "排查用户登录异常"
+  "sql": "SELECT ObjectId, Name FROM h_user LIMIT 2",
+  "corpId": "<engineCode>",
+  "config": {
+    "userId": "",
+    "extra": {
+      "icon": "icon-cgfk"
+    }
+  }
 }
 ```
 
 如果氚云平台接口要求的字段名不是 `sql`，可以通过 `H3YUN_SQL_FIELD` 修改。
 
-如果接口沿用氚云后台常见的 `PostData=...` 表单提交方式，可以配置：
-
-```powershell
-$env:H3YUN_SQL_CONTENT_TYPE="form"
-```
-
-此时请求体会变成：
-
-```text
-PostData=%7B%22sql%22%3A%22select%20*%20from%20users%20limit%2010%22%7D
-```
-
 ## 响应处理
 
-服务会兼容氚云常见响应结构：
+服务会兼容氚云 SQL 预览接口响应结构：
+
+```json
+{
+  "data": {
+    "title": null,
+    "data": [
+      {
+        "ObjectId": "示例数据ID",
+        "Name": "示例名称"
+      }
+    ],
+    "headers": [
+      {
+        "name": "ObjectId",
+        "title": "ObjectId",
+        "type": "STRING"
+      }
+    ]
+  }
+}
+```
+
+工具会把该结构整理为：
+
+```json
+{
+  "rows": [],
+  "headers": [],
+  "title": null
+}
+```
+
+同时也兼容氚云其他常见响应结构：
 
 ```json
 {
@@ -185,7 +221,9 @@ PostData=%7B%22sql%22%3A%22select%20*%20from%20users%20limit%2010%22%7D
 
 - 如果 `Errors` 不为空，会作为错误返回给 AI。
 - 如果 `Successful` 为 `false`，会作为错误返回给 AI。
+- 如果 `success` 为 `false`，会作为错误返回给 AI。
 - 如果存在 `ReturnData`，工具结果只返回 `ReturnData`。
+- 如果存在 `data.data`，工具结果返回 `rows`、`headers`、`title`。
 - 如果不存在 `ReturnData`，工具结果返回完整响应。
 
 ## 工具入参

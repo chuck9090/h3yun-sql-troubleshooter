@@ -12,7 +12,7 @@ const server = new McpServer({
 });
 
 const DEFAULT_H3YUN_BASE_URL = "https://www.h3yun.com";
-const DEFAULT_H3YUN_SQL_API_PATH = "";
+const DEFAULT_H3YUN_SQL_API_PATH = "/rx-report/integrate/data-source/v1/customsql/previewSql";
 const DEFAULT_PROJECT_SEARCH_DEPTH = 4;
 
 const config = {
@@ -23,7 +23,6 @@ const config = {
   engineCode: process.env.H3YUN_ENGINE_CODE,
   projectDir: process.env.H3YUN_PROJECT_DIR,
   sqlField: process.env.H3YUN_SQL_FIELD || "sql",
-  contentType: process.env.H3YUN_SQL_CONTENT_TYPE || "json",
   timeoutMs: Number(process.env.H3YUN_SQL_TIMEOUT_MS || 30000),
   allowWrite: process.env.H3YUN_SQL_ALLOW_WRITE === "true",
 };
@@ -54,7 +53,9 @@ server.registerTool(
     const apiUrl = getSqlApiUrl();
     const projectContext = loadProjectContext(projectDir);
     const token = config.token || projectContext.token;
-    const engineCode = config.engineCode || projectContext.engineCode;
+    const tokenClaims = parseJwtPayload(token);
+    const engineCode = config.engineCode || projectContext.engineCode || tokenClaims.enginecode;
+    const userId = "";
 
     if (!apiUrl) {
       throw new Error("当前 MCP 服务尚未内置氚云 SQL 查询接口路径。请先在 src/index.js 中设置 DEFAULT_H3YUN_SQL_API_PATH，或临时配置 H3YUN_SQL_API_URL/H3YUN_SQL_API_PATH。该地址通常固定，确认后不需要在每个 AI 工具或项目里重复配置。");
@@ -74,13 +75,9 @@ server.registerTool(
       );
     }
 
-    const payload = {
-      [config.sqlField]: sql,
-      ...(params ? { params } : {}),
-      ...(reason ? { reason } : {}),
-    };
+    const payload = buildSqlPayload(sql, params, reason, engineCode, userId);
 
-    const response = await postWithTimeout(apiUrl, payload, config.timeoutMs, token, engineCode);
+    const response = await postWithTimeout(apiUrl, payload, config.timeoutMs, token, engineCode, userId);
     const text = await response.text();
     const contentType = response.headers.get("content-type") || "";
     const body = contentType.includes("application/json") ? safeJsonParse(text) : safeJsonParse(text);
@@ -136,17 +133,15 @@ server.registerTool(
   })
 );
 
-async function postWithTimeout(url, payload, timeoutMs, token, engineCode) {
+async function postWithTimeout(url, payload, timeoutMs, token, engineCode, userId) {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeoutMs);
 
   try {
-    const requestBody = buildRequestBody(payload);
-
     return await fetch(url, {
       method: "POST",
-      headers: buildHeaders(token, engineCode),
-      body: requestBody,
+      headers: buildHeaders(token, engineCode, userId),
+      body: JSON.stringify(payload),
       signal: controller.signal,
     });
   } catch (error) {
@@ -159,26 +154,20 @@ async function postWithTimeout(url, payload, timeoutMs, token, engineCode) {
   }
 }
 
-function buildHeaders(token, engineCode) {
+function buildHeaders(token, engineCode, userId) {
   const headers = {
-    Accept: "application/json",
+    Accept: "application/json, text/plain, */*",
+    "Accept-Language": "zh-CN",
     Authorization: `Bearer ${token}`,
-    enginecode: engineCode,
+    "Cache-Control": "no-cache",
+    "Content-Type": "application/json",
+    EngineCode: engineCode,
+    Origin: config.baseUrl,
+    Pragma: "no-cache",
+    Referer: `${config.baseUrl.replace(/\/$/, "")}/home.html`,
   };
 
-  headers["Content-Type"] = isFormRequest()
-    ? "application/x-www-form-urlencoded"
-    : "application/json;charset=UTF-8";
-
   return headers;
-}
-
-function buildRequestBody(payload) {
-  if (!isFormRequest()) {
-    return JSON.stringify(payload);
-  }
-
-  return `PostData=${encodeURIComponent(JSON.stringify(payload))}`;
 }
 
 function getSqlApiUrl() {
@@ -195,8 +184,19 @@ function getSqlApiUrl() {
   return `${baseUrl}${path}`;
 }
 
-function isFormRequest() {
-  return config.contentType.toLowerCase() === "form";
+function buildSqlPayload(sql, params, reason, engineCode, userId) {
+  return {
+    [config.sqlField]: sql,
+    corpId: engineCode,
+    config: {
+      userId,
+      extra: {
+        icon: "icon-cgfk",
+      },
+    },
+    ...(params ? { params } : {}),
+    ...(reason ? { reason } : {}),
+  };
 }
 
 function loadProjectContext(projectDir) {
@@ -356,6 +356,29 @@ function safeJsonParse(text) {
   }
 }
 
+function parseJwtPayload(token) {
+  if (!token) {
+    return {};
+  }
+
+  const parts = token.split(".");
+  if (parts.length < 2) {
+    return {};
+  }
+
+  try {
+    const payload = Buffer.from(toBase64(parts[1]), "base64").toString("utf8");
+    return JSON.parse(payload);
+  } catch {
+    return {};
+  }
+}
+
+function toBase64(base64Url) {
+  const base64 = base64Url.replace(/-/g, "+").replace(/_/g, "/");
+  return base64.padEnd(base64.length + ((4 - (base64.length % 4)) % 4), "=");
+}
+
 function formatResult(value) {
   return typeof value === "string" ? value : JSON.stringify(value, null, 2);
 }
@@ -372,6 +395,10 @@ function assertH3YunSuccess(body) {
   if (body.Successful === false) {
     throw new Error(`氚云平台返回失败: ${formatResult(body)}`);
   }
+
+  if (body.success === false) {
+    throw new Error(`氚云平台返回失败: ${formatResult(body)}`);
+  }
 }
 
 function extractH3YunResult(body) {
@@ -381,6 +408,14 @@ function extractH3YunResult(body) {
 
   if (Object.prototype.hasOwnProperty.call(body, "ReturnData")) {
     return body.ReturnData;
+  }
+
+  if (body.data && typeof body.data === "object" && Array.isArray(body.data.data)) {
+    return {
+      rows: body.data.data,
+      headers: body.data.headers || [],
+      title: body.data.title || null,
+    };
   }
 
   return body;
