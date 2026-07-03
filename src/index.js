@@ -13,12 +13,16 @@ const server = new McpServer({
 
 const DEFAULT_H3YUN_BASE_URL = "https://www.h3yun.com";
 const DEFAULT_H3YUN_SQL_API_PATH = "/rx-report/integrate/data-source/v1/customsql/previewSql";
+const DEFAULT_H3YUN_REPORTING_ACTION_PATH = "/Console/Reporting/OnAction";
 const DEFAULT_PROJECT_SEARCH_DEPTH = 4;
+const SYSTEM_USER_SQL = "select ObjectId from h_user where name='System'";
 
 const config = {
   baseUrl: process.env.H3YUN_BASE_URL || DEFAULT_H3YUN_BASE_URL,
   sqlApiUrl: process.env.H3YUN_SQL_API_URL,
   sqlApiPath: process.env.H3YUN_SQL_API_PATH || DEFAULT_H3YUN_SQL_API_PATH,
+  reportingActionUrl: process.env.H3YUN_REPORTING_ACTION_URL,
+  reportingActionPath: process.env.H3YUN_REPORTING_ACTION_PATH || DEFAULT_H3YUN_REPORTING_ACTION_PATH,
   token: process.env.H3YUN_TOKEN,
   engineCode: process.env.H3YUN_ENGINE_CODE,
   projectDir: process.env.H3YUN_PROJECT_DIR,
@@ -32,9 +36,9 @@ server.registerTool(
   {
     title: "查询氚云数据",
     description:
-      "当用户在排查氚云业务问题、表单数据异常、字段值异常、关联数据异常、流程或审批异常、业务规则执行结果异常、线上数据不一致等问题时，应优先使用本工具查询真实数据。氚云数据库是 MySQL，构造 SQL 时应按 MySQL 语法编写。调用前应先参考项目根目录的 cmax.json 获取应用下的表单编码和表单名称，并参考各表单目录下的 fields.md 获取表单字段和控件编码。工具会优先使用环境变量 H3YUN_TOKEN/H3YUN_ENGINE_CODE；未配置时会自动查找项目目录中的 .h3token 和 cmax.json 的 engineCode。查找规则支持从当前工作区向上查找，也支持向下有限层级查找，例如工作区是多个项目的上级目录时，可自动发现下级氚云应用目录。氚云业务表数据库表名规则为 i_表单编码，系统表通常以 h_ 开头；涉及 h_ 系统表时应参考氚云系统表说明文档：https://h3yunpro.github.io/docs/database/ 。默认只执行只读 SQL，不要要求用户手动查数据库；如果需要确认真实数据，应主动构造只读 SQL 调用本工具。",
+      "当用户在排查氚云业务问题、表单数据异常、字段值异常、关联数据异常、流程或审批异常、业务规则执行结果异常、线上数据不一致等问题时，应优先使用本工具查询真实数据。氚云数据库是 MySQL，构造 SQL 时应按 MySQL 语法编写。传给接口的 SQL 末尾不要加分号，因为平台会在外层再包一层查询。调用前应先参考项目根目录的 cmax.json 获取应用下的表单编码和表单名称，并参考各表单目录下的 fields.md 获取表单字段和控件编码。工具会优先使用环境变量 H3YUN_TOKEN/H3YUN_ENGINE_CODE；未配置时会自动查找项目目录中的 .h3token 和 cmax.json 的 engineCode。查找规则支持从当前工作区向上查找，也支持向下有限层级查找，例如工作区是多个项目的上级目录时，可自动发现下级氚云应用目录。氚云业务表数据库表名规则为 i_表单编码，系统表通常以 h_ 开头；涉及 h_ 系统表时应参考氚云系统表说明文档：https://h3yunpro.github.io/docs/database/ 。默认只执行只读 SQL，不要要求用户手动查数据库；如果需要确认真实数据，应主动构造只读 SQL 调用本工具。",
     inputSchema: {
-      sql: z.string().min(1).describe("用于排查氚云问题的只读 SQL。氚云数据库是 MySQL，应使用 MySQL 语法。业务表表名通常是 i_表单编码，系统表通常以 h_ 开头。写 SQL 前应优先读取 cmax.json 和相关 fields.md，确认表单编码、表单名称、字段名称和控件编码；涉及 h_ 系统表时应参考 https://h3yunpro.github.io/docs/database/ 。不要执行 insert、update、delete、drop、alter 等写入或结构变更语句。"),
+      sql: z.string().min(1).describe("用于排查氚云问题的只读 SQL。氚云数据库是 MySQL，应使用 MySQL 语法。SQL 末尾不要加分号，因为平台会在外层再包一层查询。业务表表名通常是 i_表单编码，系统表通常以 h_ 开头。写 SQL 前应优先读取 cmax.json 和相关 fields.md，确认表单编码、表单名称、字段名称和控件编码；涉及 h_ 系统表时应参考 https://h3yunpro.github.io/docs/database/ 。不要执行 insert、update、delete、drop、alter 等写入或结构变更语句。"),
       params: z
         .record(z.any())
         .optional()
@@ -53,9 +57,7 @@ server.registerTool(
     const apiUrl = getSqlApiUrl();
     const projectContext = loadProjectContext(projectDir);
     const token = config.token || projectContext.token;
-    const tokenClaims = parseJwtPayload(token);
-    const engineCode = config.engineCode || projectContext.engineCode || tokenClaims.enginecode;
-    const userId = "";
+    const engineCode = config.engineCode || projectContext.engineCode;
 
     if (!apiUrl) {
       throw new Error("当前 MCP 服务尚未内置氚云 SQL 查询接口路径。请先在 src/index.js 中设置 DEFAULT_H3YUN_SQL_API_PATH，或临时配置 H3YUN_SQL_API_URL/H3YUN_SQL_API_PATH。该地址通常固定，确认后不需要在每个 AI 工具或项目里重复配置。");
@@ -75,7 +77,9 @@ server.registerTool(
       );
     }
 
-    const payload = buildSqlPayload(sql, params, reason, engineCode, userId);
+    const normalizedSql = normalizeSqlForH3Yun(sql);
+    const userId = await resolveExecutionUserId(token, engineCode);
+    const payload = buildSqlPayload(normalizedSql, params, reason, engineCode, userId);
 
     const response = await postWithTimeout(apiUrl, payload, config.timeoutMs, token, engineCode, userId);
     const text = await response.text();
@@ -119,15 +123,16 @@ server.registerTool(
           "1. 适合主动使用 query_sql 的场景：用户排查氚云业务问题、表单数据异常、字段值异常、关联数据异常、流程或审批异常、业务规则执行结果异常、线上数据不一致、需要验证真实库中数据时。",
           "2. 不要要求用户手动查数据库；如果问题需要确认真实数据，应主动构造只读 SQL 并调用 query_sql。",
           "3. 氚云数据库是 MySQL，构造 SQL 时应按 MySQL 语法编写，例如使用 LIMIT 控制返回行数。",
-          "4. 写 SQL 前，优先查看氚云应用目录下的 cmax.json。该文件记录当前应用下的所有表单编码和表单名称，可用于确定目标表单。实际工作区可能是多个项目的上级目录，此时 cmax.json 可能在下级应用目录中。",
-          "5. 写 SQL 前，优先查看目标表单目录下的 fields.md。该文件记录表单名、字段名、控件编码，可用于确定 select 字段和 where 条件字段。",
-          "6. 氚云业务表的数据库表名规则是 i_表单编码。例如表单编码为 D000001Example，则业务表通常是 i_D000001Example。",
-          "7. 氚云系统表通常以 h_ 开头。查询流程、审批、组织、系统元数据等信息时，应优先考虑 h_ 开头的系统表。",
-          "8. 涉及 h_ 系统表时，应参考氚云系统表说明文档：https://h3yunpro.github.io/docs/database/ 。该文档包含氚云所有系统表的说明。",
-          "9. 默认只使用 select、with、show、describe、desc、explain 等只读 SQL。不要执行 insert、update、delete、drop、alter、create 等写入或结构变更 SQL。",
-          "10. 查询时尽量加 where 条件和 limit，避免一次读取过多数据。",
-          "11. 如果用户只提供了表单名称，应先根据 cmax.json 找到表单编码，再按 i_表单编码 拼出业务表名。",
-          "12. 如果用户只提供了字段中文名，应先根据 fields.md 找到对应控件编码，再用控件编码写 SQL。",
+          "4. 传给接口的 SQL 末尾不要加分号，因为平台拿到 SQL 后会在外层再包一层查询。",
+          "5. 写 SQL 前，优先查看氚云应用目录下的 cmax.json。该文件记录当前应用下的所有表单编码和表单名称，可用于确定目标表单。实际工作区可能是多个项目的上级目录，此时 cmax.json 可能在下级应用目录中。",
+          "6. 写 SQL 前，优先查看目标表单目录下的 fields.md。该文件记录表单名、字段名、控件编码，可用于确定 select 字段和 where 条件字段。",
+          "7. 氚云业务表的数据库表名规则是 i_表单编码。例如表单编码为 D000001Example，则业务表通常是 i_D000001Example。",
+          "8. 氚云系统表通常以 h_ 开头。查询流程、审批、组织、系统元数据等信息时，应优先考虑 h_ 开头的系统表。",
+          "9. 涉及 h_ 系统表时，应参考氚云系统表说明文档：https://h3yunpro.github.io/docs/database/ 。该文档包含氚云所有系统表的说明。",
+          "10. 默认只使用 select、with、show、describe、desc、explain 等只读 SQL。不要执行 insert、update、delete、drop、alter、create 等写入或结构变更 SQL。",
+          "11. 查询时尽量加 where 条件和 limit，避免一次读取过多数据。",
+          "12. 如果用户只提供了表单名称，应先根据 cmax.json 找到表单编码，再按 i_表单编码 拼出业务表名。",
+          "13. 如果用户只提供了字段中文名，应先根据 fields.md 找到对应控件编码，再用控件编码写 SQL。",
         ].join("\n"),
       },
     ],
@@ -155,6 +160,27 @@ async function postWithTimeout(url, payload, timeoutMs, token, engineCode, userI
   }
 }
 
+async function postFormWithTimeout(url, payload, timeoutMs, token, engineCode) {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+
+  try {
+    return await fetch(url, {
+      method: "POST",
+      headers: buildReportingHeaders(token, engineCode),
+      body: `PostData=${encodeURIComponent(JSON.stringify(payload))}`,
+      signal: controller.signal,
+    });
+  } catch (error) {
+    if (error.name === "AbortError") {
+      throw new Error(`氚云报表 SQL 校验接口调用超时，已等待 ${timeoutMs}ms。`);
+    }
+    throw error;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
 function buildHeaders(token, engineCode, userId) {
   const headers = {
     Accept: "application/json, text/plain, */*",
@@ -165,7 +191,22 @@ function buildHeaders(token, engineCode, userId) {
     EngineCode: engineCode,
     Origin: config.baseUrl,
     Pragma: "no-cache",
-    Referer: `${config.baseUrl.replace(/\/$/, "")}/home.html`,
+  };
+
+  return headers;
+}
+
+function buildReportingHeaders(token, engineCode) {
+  const headers = {
+    Accept: "application/json, text/javascript, */*; q=0.01",
+    "Accept-Language": "zh-CN,zh;q=0.9",
+    Authorization: `Bearer ${token}`,
+    "Cache-Control": "no-cache",
+    "Content-Type": "application/x-www-form-urlencoded; charset=UTF-8",
+    EngineCode: engineCode,
+    Origin: config.baseUrl,
+    Pragma: "no-cache",
+    "X-Requested-With": "XMLHttpRequest",
   };
 
   return headers;
@@ -185,6 +226,18 @@ function getSqlApiUrl() {
   return `${baseUrl}${path}`;
 }
 
+function getReportingActionUrl() {
+  if (config.reportingActionUrl) {
+    return config.reportingActionUrl;
+  }
+
+  const baseUrl = config.baseUrl.replace(/\/$/, "");
+  const path = config.reportingActionPath.startsWith("/")
+    ? config.reportingActionPath
+    : `/${config.reportingActionPath}`;
+  return `${baseUrl}${path}`;
+}
+
 function buildSqlPayload(sql, params, reason, engineCode, userId) {
   return {
     [config.sqlField]: sql,
@@ -198,6 +251,32 @@ function buildSqlPayload(sql, params, reason, engineCode, userId) {
     ...(params ? { params } : {}),
     ...(reason ? { reason } : {}),
   };
+}
+
+async function resolveExecutionUserId(token, engineCode) {
+  const payload = {
+    ActionName: "CheckSQL",
+    Sql: SYSTEM_USER_SQL,
+    Columns: "[]",
+  };
+  const response = await postFormWithTimeout(getReportingActionUrl(), payload, config.timeoutMs, token, engineCode);
+  const text = await response.text();
+  const body = safeJsonParse(text);
+
+  if (!response.ok) {
+    throw new Error(`查询 System 用户 ID 失败，HTTP 状态码 ${response.status}: ${formatResult(body)}`);
+  }
+
+  assertH3YunSuccess(body);
+
+  const rows = body?.ReturnData?.rows;
+  const systemUserId = Array.isArray(rows) && rows.length > 0 ? rows[0]?.objectid || rows[0]?.ObjectId : "";
+
+  if (!systemUserId) {
+    throw new Error(`未查询到 System 用户 ID，请确认 SQL 可执行：${SYSTEM_USER_SQL}`);
+  }
+
+  return systemUserId;
 }
 
 function loadProjectContext(projectDir) {
@@ -349,35 +428,16 @@ function isReadOnlySql(sql) {
   return /^(select|with|show|describe|desc|explain)\b/.test(normalized);
 }
 
+function normalizeSqlForH3Yun(sql) {
+  return sql.trim().replace(/;+\s*$/g, "");
+}
+
 function safeJsonParse(text) {
   try {
     return JSON.parse(text);
   } catch {
     return text;
   }
-}
-
-function parseJwtPayload(token) {
-  if (!token) {
-    return {};
-  }
-
-  const parts = token.split(".");
-  if (parts.length < 2) {
-    return {};
-  }
-
-  try {
-    const payload = Buffer.from(toBase64(parts[1]), "base64").toString("utf8");
-    return JSON.parse(payload);
-  } catch {
-    return {};
-  }
-}
-
-function toBase64(base64Url) {
-  const base64 = base64Url.replace(/-/g, "+").replace(/_/g, "/");
-  return base64.padEnd(base64.length + ((4 - (base64.length % 4)) % 4), "=");
 }
 
 function formatResult(value) {
