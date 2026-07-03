@@ -32,9 +32,9 @@ server.registerTool(
   {
     title: "查询氚云数据",
     description:
-      "当用户在排查氚云业务问题、表单数据异常、字段值异常、关联数据异常、流程或审批异常、业务规则执行结果异常、线上数据不一致等问题时，应优先使用本工具查询真实数据。调用前应先参考项目根目录的 cmax.json 获取应用下的表单编码和表单名称，并参考各表单目录下的 fields.md 获取表单字段和控件编码。工具会优先使用环境变量 H3YUN_TOKEN/H3YUN_ENGINE_CODE；未配置时会自动查找项目目录中的 .h3token 和 cmax.json 的 engineCode。查找规则支持从当前工作区向上查找，也支持向下有限层级查找，例如工作区是多个项目的上级目录时，可自动发现下级氚云应用目录。氚云业务表数据库表名规则为 i_表单编码，系统表通常以 h_ 开头；涉及 h_ 系统表时应参考氚云系统表说明文档：https://h3yunpro.github.io/docs/database/ 。默认只执行只读 SQL，不要要求用户手动查数据库；如果需要确认真实数据，应主动构造只读 SQL 调用本工具。",
+      "当用户在排查氚云业务问题、表单数据异常、字段值异常、关联数据异常、流程或审批异常、业务规则执行结果异常、线上数据不一致等问题时，应优先使用本工具查询真实数据。氚云数据库是 MySQL，构造 SQL 时应按 MySQL 语法编写。调用前应先参考项目根目录的 cmax.json 获取应用下的表单编码和表单名称，并参考各表单目录下的 fields.md 获取表单字段和控件编码。工具会优先使用环境变量 H3YUN_TOKEN/H3YUN_ENGINE_CODE；未配置时会自动查找项目目录中的 .h3token 和 cmax.json 的 engineCode。查找规则支持从当前工作区向上查找，也支持向下有限层级查找，例如工作区是多个项目的上级目录时，可自动发现下级氚云应用目录。氚云业务表数据库表名规则为 i_表单编码，系统表通常以 h_ 开头；涉及 h_ 系统表时应参考氚云系统表说明文档：https://h3yunpro.github.io/docs/database/ 。默认只执行只读 SQL，不要要求用户手动查数据库；如果需要确认真实数据，应主动构造只读 SQL 调用本工具。",
     inputSchema: {
-      sql: z.string().min(1).describe("用于排查氚云问题的只读 SQL。业务表表名通常是 i_表单编码，系统表通常以 h_ 开头。写 SQL 前应优先读取 cmax.json 和相关 fields.md，确认表单编码、表单名称、字段名称和控件编码；涉及 h_ 系统表时应参考 https://h3yunpro.github.io/docs/database/ 。不要执行 insert、update、delete、drop、alter 等写入或结构变更语句。"),
+      sql: z.string().min(1).describe("用于排查氚云问题的只读 SQL。氚云数据库是 MySQL，应使用 MySQL 语法。业务表表名通常是 i_表单编码，系统表通常以 h_ 开头。写 SQL 前应优先读取 cmax.json 和相关 fields.md，确认表单编码、表单名称、字段名称和控件编码；涉及 h_ 系统表时应参考 https://h3yunpro.github.io/docs/database/ 。不要执行 insert、update、delete、drop、alter 等写入或结构变更语句。"),
       params: z
         .record(z.any())
         .optional()
@@ -42,7 +42,7 @@ server.registerTool(
       projectDir: z
         .string()
         .optional()
-        .describe("可选的氚云 CMAX 项目目录或其上级工作区目录。通常不需要用户配置；如果 AI 客户端知道当前工作区路径，可传入该路径。未提供时会尝试从 INIT_CWD、当前工作目录向上查找，也会向下有限层级查找 cmax.json 和 .h3token。"),
+        .describe("可选的氚云应用项目目录或其上级工作区目录。通常不需要用户配置；如果 AI 客户端知道当前工作区路径，可传入该路径。未提供时会尝试从 INIT_CWD、当前工作目录向上查找，也会向下有限层级查找 cmax.json 和 .h3token。"),
       reason: z
         .string()
         .optional()
@@ -118,15 +118,16 @@ server.registerTool(
           "",
           "1. 适合主动使用 query_sql 的场景：用户排查氚云业务问题、表单数据异常、字段值异常、关联数据异常、流程或审批异常、业务规则执行结果异常、线上数据不一致、需要验证真实库中数据时。",
           "2. 不要要求用户手动查数据库；如果问题需要确认真实数据，应主动构造只读 SQL 并调用 query_sql。",
-          "3. 写 SQL 前，优先查看氚云应用目录下的 cmax.json。该文件记录当前应用下的所有表单编码和表单名称，可用于确定目标表单。实际工作区可能是多个项目的上级目录，此时 cmax.json 可能在下级应用目录中。",
-          "4. 写 SQL 前，优先查看目标表单目录下的 fields.md。该文件记录表单名、字段名、控件编码，可用于确定 select 字段和 where 条件字段。",
-          "5. 氚云业务表的数据库表名规则是 i_表单编码。例如表单编码为 D000001Example，则业务表通常是 i_D000001Example。",
-          "6. 氚云系统表通常以 h_ 开头。查询流程、审批、组织、系统元数据等信息时，应优先考虑 h_ 开头的系统表。",
-          "7. 涉及 h_ 系统表时，应参考氚云系统表说明文档：https://h3yunpro.github.io/docs/database/ 。该文档包含氚云所有系统表的说明。",
-          "8. 默认只使用 select、with、show、describe、desc、explain 等只读 SQL。不要执行 insert、update、delete、drop、alter、create 等写入或结构变更 SQL。",
-          "9. 查询时尽量加 where 条件和 limit，避免一次读取过多数据。",
-          "10. 如果用户只提供了表单名称，应先根据 cmax.json 找到表单编码，再按 i_表单编码 拼出业务表名。",
-          "11. 如果用户只提供了字段中文名，应先根据 fields.md 找到对应控件编码，再用控件编码写 SQL。",
+          "3. 氚云数据库是 MySQL，构造 SQL 时应按 MySQL 语法编写，例如使用 LIMIT 控制返回行数。",
+          "4. 写 SQL 前，优先查看氚云应用目录下的 cmax.json。该文件记录当前应用下的所有表单编码和表单名称，可用于确定目标表单。实际工作区可能是多个项目的上级目录，此时 cmax.json 可能在下级应用目录中。",
+          "5. 写 SQL 前，优先查看目标表单目录下的 fields.md。该文件记录表单名、字段名、控件编码，可用于确定 select 字段和 where 条件字段。",
+          "6. 氚云业务表的数据库表名规则是 i_表单编码。例如表单编码为 D000001Example，则业务表通常是 i_D000001Example。",
+          "7. 氚云系统表通常以 h_ 开头。查询流程、审批、组织、系统元数据等信息时，应优先考虑 h_ 开头的系统表。",
+          "8. 涉及 h_ 系统表时，应参考氚云系统表说明文档：https://h3yunpro.github.io/docs/database/ 。该文档包含氚云所有系统表的说明。",
+          "9. 默认只使用 select、with、show、describe、desc、explain 等只读 SQL。不要执行 insert、update、delete、drop、alter、create 等写入或结构变更 SQL。",
+          "10. 查询时尽量加 where 条件和 limit，避免一次读取过多数据。",
+          "11. 如果用户只提供了表单名称，应先根据 cmax.json 找到表单编码，再按 i_表单编码 拼出业务表名。",
+          "12. 如果用户只提供了字段中文名，应先根据 fields.md 找到对应控件编码，再用控件编码写 SQL。",
         ].join("\n"),
       },
     ],

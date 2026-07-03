@@ -2,9 +2,9 @@
 
 一个用于辅助 AI 排查氚云问题的 MCP 服务。`h3yun` 是氚云平台的英文标识。AI 可以调用 `query_sql` 工具，把 SQL 发送到氚云平台接口，由平台执行后返回查询结果。
 
-本项目的接口调用方式参考了 `h3yun-cmax` VSCode 插件：默认氚云地址为 `https://www.h3yun.com`，鉴权使用 `Authorization: Bearer h3_token`，并通过请求头 `enginecode` 传入企业引擎编码。
+本项目的接口调用方式参考了氚云项目同步工具的请求约定：默认氚云地址为 `https://www.h3yun.com`，鉴权使用 `Authorization: Bearer h3_token`，并通过请求头 `enginecode` 传入企业引擎编码。
 
-如果当前氚云 CMAX 项目目录下存在 `.h3token` 和 `cmax.json`，MCP 会自动读取它们：
+如果当前氚云应用项目目录下存在 `.h3token` 和 `cmax.json`，MCP 会自动读取它们：
 
 - `.h3token`：保存氚云接口身份校验参数，也就是浏览器 Cookie 中的 `h3_token` 值。
 - `cmax.json`：其中的 `engineCode` 是氚云企业引擎编码。
@@ -34,6 +34,8 @@ C:\workspace\h3yun-projects
 ## AI 使用规则
 
 当用户排查氚云业务问题、表单数据异常、字段值异常、关联数据异常、流程或审批异常、业务规则执行结果异常、线上数据不一致时，AI 应主动考虑使用本 MCP 查询真实数据，而不是要求用户手动查数据库。
+
+氚云数据库是 MySQL。AI 构造 SQL 时应按 MySQL 语法编写，例如使用 `LIMIT` 控制返回行数。
 
 在构造 SQL 前，AI 应优先参考当前项目中的这些文件：
 
@@ -126,7 +128,7 @@ npx h3yun-sql-troubleshooter
 | `H3YUN_BASE_URL` | 否 | `https://www.h3yun.com` | 氚云平台基础地址 |
 | `H3YUN_SQL_API_URL` | 否 | 内置默认地址 | 完整 SQL 查询接口地址；仅接口地址变化时覆盖 |
 | `H3YUN_SQL_API_PATH` | 否 | 内置默认路径 | SQL 查询接口路径；未配置 `H3YUN_SQL_API_URL` 时会和 `H3YUN_BASE_URL` 拼接 |
-| `H3YUN_PROJECT_DIR` | 否 | 自动发现 | 氚云 CMAX 项目目录或其上级目录。通常不需要配置，优先由 AI 调用工具时传入当前工作区路径 |
+| `H3YUN_PROJECT_DIR` | 否 | 自动发现 | 氚云应用项目目录或其上级目录。通常不需要配置，优先由 AI 调用工具时传入当前工作区路径 |
 | `H3YUN_TOKEN` | 条件必填 | 自动读取 `.h3token` | 从浏览器 Cookie 中获取的 `h3_token` 值 |
 | `H3YUN_ENGINE_CODE` | 条件必填 | 自动读取 `cmax.json.engineCode` | 氚云企业引擎编码 `enginecode` |
 | `H3YUN_SQL_FIELD` | 否 | `sql` | 请求体中 SQL 字段名 |
@@ -236,7 +238,7 @@ Referer: https://www.h3yun.com/home.html
   "params": {
     "traceId": "optional"
   },
-  "projectDir": "D:/your/cmax-project",
+  "projectDir": "D:/workspace/h3yun-app",
   "reason": "说明为什么要查这条 SQL"
 }
 ```
