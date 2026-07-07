@@ -1,6 +1,6 @@
 # h3yun-sql-troubleshooter
 
-一个用于辅助 AI 排查氚云问题的 MCP 服务。`h3yun` 是氚云平台的英文标识。AI 可以调用 `query_sql` 工具，把 SQL 发送到氚云平台接口，由平台执行后返回查询结果。
+一个用于查询氚云 SQL 数据的 MCP 工具。`h3yun` 是氚云平台的英文标识。AI 或其他 MCP 客户端可以调用 `query_sql` 工具，把 SQL 发送到氚云平台接口，由平台执行后返回查询结果；辅助 AI 排查氚云业务问题是它的扩展使用场景。
 
 本项目的接口调用方式参考了氚云项目同步工具的请求约定：默认氚云地址为 `https://www.h3yun.com`，鉴权使用 `Authorization: Bearer h3_token`，并通过请求头 `EngineCode` 传入企业引擎编码。
 
@@ -25,19 +25,20 @@ C:\workspace\h3yun-projects
 ## 功能
 
 - 通过 MCP stdio 协议提供工具给 AI 客户端调用。
-- 暴露 `query_sql` 工具，用于执行只读 SQL 排查真实数据。
-- 暴露 `get_h3yun_sql_troubleshooting_guide` 工具，用于告诉 AI 如何根据项目文件定位表单、字段和数据库表。
+- 暴露 `query_sql` 工具，用于执行只读 SQL 查询氚云数据。
+- 暴露 `get_h3yun_sql_troubleshooting_guide` 工具，用于辅助 AI 根据项目文件定位表单、字段和数据库表。
 - 默认使用内置的氚云平台 SQL 接口地址，确认接口路径后不需要在 AI 工具里重复配置。
 - 未配置鉴权环境变量时，可自动读取项目目录下的 `.h3token` 和 `cmax.json.engineCode`。
 - 默认只允许 `select`、`with`、`show`、`describe`、`desc`、`explain` 等查询类 SQL。
+- 用户未指定查询条数时，`select`/`with` 查询会默认限制为 20 条以内。
 
 ## AI 使用规则
 
-当用户排查氚云业务问题、表单数据异常、字段值异常、关联数据异常、流程或审批异常、业务规则执行结果异常、线上数据不一致时，AI 应主动考虑使用本 MCP 查询真实数据，而不是要求用户手动查数据库。
+本 MCP 的核心用途是查询氚云 SQL 数据。当用户需要查看氚云数据，或排查氚云业务问题、表单数据异常、字段值异常、关联数据异常、流程或审批异常、业务规则执行结果异常、线上数据不一致时，AI 应主动考虑使用本 MCP 查询真实数据，而不是要求用户手动查数据库。
 
-氚云数据库是 MySQL。AI 构造 SQL 时应按 MySQL 语法编写，例如使用 `LIMIT` 控制返回行数。
+氚云数据库是 MySQL。AI 构造 SQL 时应按 MySQL 语法编写，例如使用 `LIMIT` 控制返回行数。用户未指定要查多少条数据时，MCP 会对 `select`/`with` 查询默认追加 `LIMIT 20`。
 
-传给接口的 SQL 末尾不要加分号，因为平台拿到 SQL 后会在外层再包一层查询。MCP 会自动移除 SQL 末尾的分号，但 AI 在生成 SQL 时也应避免添加。
+传给接口的 SQL 末尾不要加分号，因为平台拿到 SQL 后会在外层再包一层查询。MCP 会自动移除 SQL 末尾的分号，并在需要时追加默认 `LIMIT 20`，但 AI 在生成 SQL 时也应避免添加分号。
 
 在构造 SQL 前，AI 应优先参考当前项目中的这些文件：
 

@@ -1,7 +1,7 @@
 {
   "name": "h3yun-sql-troubleshooter",
   "version": "0.1.0",
-  "description": "用于辅助 AI 通过氚云 SQL 查询接口排查问题的 MCP 服务。",
+  "description": "用于查询氚云 SQL 数据的 MCP 工具，也可辅助 AI 排查氚云业务问题。",
   "type": "module",
   "bin": {
     "h3yun-sql-troubleshooter": "./src/index.js"

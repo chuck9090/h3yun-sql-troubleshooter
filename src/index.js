@@ -15,6 +15,7 @@ const DEFAULT_H3YUN_BASE_URL = "https://www.h3yun.com";
 const DEFAULT_H3YUN_SQL_API_PATH = "/rx-report/integrate/data-source/v1/customsql/previewSql";
 const DEFAULT_H3YUN_REPORTING_ACTION_PATH = "/Console/Reporting/OnAction";
 const DEFAULT_PROJECT_SEARCH_DEPTH = 4;
+const DEFAULT_QUERY_LIMIT = 20;
 const SYSTEM_USER_SQL = "select ObjectId from h_user where name='System'";
 
 const config = {
@@ -36,9 +37,9 @@ server.registerTool(
   {
     title: "查询氚云数据",
     description:
-      "当用户在排查氚云业务问题、表单数据异常、字段值异常、关联数据异常、流程或审批异常、业务规则执行结果异常、线上数据不一致等问题时，应优先使用本工具查询真实数据。氚云数据库是 MySQL，构造 SQL 时应按 MySQL 语法编写。传给接口的 SQL 末尾不要加分号，因为平台会在外层再包一层查询。调用前应先参考项目根目录的 cmax.json 获取应用下的表单编码和表单名称，并参考各表单目录下的 fields.md 获取表单字段和控件编码。工具会优先使用环境变量 H3YUN_TOKEN/H3YUN_ENGINE_CODE；未配置时会自动查找项目目录中的 .h3token 和 cmax.json 的 engineCode。查找规则支持从当前工作区向上查找，也支持向下有限层级查找，例如工作区是多个项目的上级目录时，可自动发现下级氚云应用目录。氚云业务表数据库表名规则为 i_表单编码，系统表通常以 h_ 开头；涉及 h_ 系统表时应参考氚云系统表说明文档：https://h3yunpro.github.io/docs/database/ 。默认只执行只读 SQL，不要要求用户手动查数据库；如果需要确认真实数据，应主动构造只读 SQL 调用本工具。",
+      "用于查询氚云 SQL 数据，也可辅助 AI 排查氚云业务问题、表单数据异常、字段值异常、关联数据异常、流程或审批异常、业务规则执行结果异常、线上数据不一致等问题。氚云数据库是 MySQL，构造 SQL 时应按 MySQL 语法编写。传给接口的 SQL 末尾不要加分号，因为平台会在外层再包一层查询。用户未指定查询条数时，select/with 查询会默认限制为 20 条以内。调用前应先参考项目根目录的 cmax.json 获取应用下的表单编码和表单名称，并参考各表单目录下的 fields.md 获取表单字段和控件编码。工具会优先使用环境变量 H3YUN_TOKEN/H3YUN_ENGINE_CODE；未配置时会自动查找项目目录中的 .h3token 和 cmax.json 的 engineCode。查找规则支持从当前工作区向上查找，也支持向下有限层级查找，例如工作区是多个项目的上级目录时，可自动发现下级氚云应用目录。氚云业务表数据库表名规则为 i_表单编码，系统表通常以 h_ 开头；涉及 h_ 系统表时应参考氚云系统表说明文档：https://h3yunpro.github.io/docs/database/ 。默认只执行只读 SQL，不要要求用户手动查数据库；如果需要确认真实数据，应主动构造只读 SQL 调用本工具。",
     inputSchema: {
-      sql: z.string().min(1).describe("用于排查氚云问题的只读 SQL。氚云数据库是 MySQL，应使用 MySQL 语法。SQL 末尾不要加分号，因为平台会在外层再包一层查询。业务表表名通常是 i_表单编码，系统表通常以 h_ 开头。写 SQL 前应优先读取 cmax.json 和相关 fields.md，确认表单编码、表单名称、字段名称和控件编码；涉及 h_ 系统表时应参考 https://h3yunpro.github.io/docs/database/ 。不要执行 insert、update、delete、drop、alter 等写入或结构变更语句。"),
+      sql: z.string().min(1).describe("用于查询氚云数据的只读 SQL，也可用于排查氚云问题。氚云数据库是 MySQL，应使用 MySQL 语法。SQL 末尾不要加分号，因为平台会在外层再包一层查询。用户未指定查询条数时，select/with 查询会默认限制为 20 条以内。业务表表名通常是 i_表单编码，系统表通常以 h_ 开头。写 SQL 前应优先读取 cmax.json 和相关 fields.md，确认表单编码、表单名称、字段名称和控件编码；涉及 h_ 系统表时应参考 https://h3yunpro.github.io/docs/database/ 。不要执行 insert、update、delete、drop、alter 等写入或结构变更语句。"),
       params: z
         .record(z.any())
         .optional()
@@ -110,7 +111,7 @@ server.registerTool(
   {
     title: "获取氚云 SQL 排查指南",
     description:
-      "当 AI 需要排查氚云问题但不确定如何定位表单、字段或数据库表名时，调用本工具获取氚云 SQL 排查规则。它会说明应读取 cmax.json、fields.md、i_ 和 h_ 表名规则，以及氚云系统表说明文档地址。",
+      "当 AI 需要查询氚云 SQL 数据或排查氚云问题，但不确定如何定位表单、字段或数据库表名时，调用本工具获取氚云 SQL 查询规则。它会说明应读取 cmax.json、fields.md、i_ 和 h_ 表名规则，以及氚云系统表说明文档地址。",
     inputSchema: {},
   },
   async () => ({
@@ -120,9 +121,9 @@ server.registerTool(
         text: [
           "氚云 SQL 排查指南：",
           "",
-          "1. 适合主动使用 query_sql 的场景：用户排查氚云业务问题、表单数据异常、字段值异常、关联数据异常、流程或审批异常、业务规则执行结果异常、线上数据不一致、需要验证真实库中数据时。",
+          "1. query_sql 的核心用途是查询氚云 SQL 数据；当用户需要查看真实库数据，或排查氚云业务问题、表单数据异常、字段值异常、关联数据异常、流程或审批异常、业务规则执行结果异常、线上数据不一致时，也适合主动使用。",
           "2. 不要要求用户手动查数据库；如果问题需要确认真实数据，应主动构造只读 SQL 并调用 query_sql。",
-          "3. 氚云数据库是 MySQL，构造 SQL 时应按 MySQL 语法编写，例如使用 LIMIT 控制返回行数。",
+          "3. 氚云数据库是 MySQL，构造 SQL 时应按 MySQL 语法编写，例如使用 LIMIT 控制返回行数；如果用户未指定要查多少条，query_sql 会对 select/with 查询默认追加 LIMIT 20。",
           "4. 传给接口的 SQL 末尾不要加分号，因为平台拿到 SQL 后会在外层再包一层查询。",
           "5. 写 SQL 前，优先查看氚云应用目录下的 cmax.json。该文件记录当前应用下的所有表单编码和表单名称，可用于确定目标表单。实际工作区可能是多个项目的上级目录，此时 cmax.json 可能在下级应用目录中。",
           "6. 写 SQL 前，优先查看目标表单目录下的 fields.md。该文件记录表单名、字段名、控件编码，可用于确定 select 字段和 where 条件字段。",
@@ -130,7 +131,7 @@ server.registerTool(
           "8. 氚云系统表通常以 h_ 开头。查询流程、审批、组织、系统元数据等信息时，应优先考虑 h_ 开头的系统表。",
           "9. 涉及 h_ 系统表时，应参考氚云系统表说明文档：https://h3yunpro.github.io/docs/database/ 。该文档包含氚云所有系统表的说明。",
           "10. 默认只使用 select、with、show、describe、desc、explain 等只读 SQL。不要执行 insert、update、delete、drop、alter、create 等写入或结构变更 SQL。",
-          "11. 查询时尽量加 where 条件和 limit，避免一次读取过多数据。",
+          "11. 查询时尽量加 where 条件和 limit，避免一次读取过多数据；未指定 limit 时默认最多查询 20 条。",
           "12. 如果用户只提供了表单名称，应先根据 cmax.json 找到表单编码，再按 i_表单编码 拼出业务表名。",
           "13. 如果用户只提供了字段中文名，应先根据 fields.md 找到对应控件编码，再用控件编码写 SQL。",
         ].join("\n"),
@@ -429,7 +430,23 @@ function isReadOnlySql(sql) {
 }
 
 function normalizeSqlForH3Yun(sql) {
-  return sql.trim().replace(/;+\s*$/g, "");
+  const normalized = sql.trim().replace(/;+\s*$/g, "");
+
+  if (!shouldApplyDefaultLimit(normalized)) {
+    return normalized;
+  }
+
+  return `${normalized} LIMIT ${DEFAULT_QUERY_LIMIT}`;
+}
+
+function shouldApplyDefaultLimit(sql) {
+  const normalized = sql
+    .replace(/--.*$/gm, "")
+    .replace(/\/\*[\s\S]*?\*\//g, "")
+    .trim()
+    .toLowerCase();
+
+  return /^(select|with)\b/.test(normalized) && !/\blimit\b/.test(normalized);
 }
 
 function safeJsonParse(text) {
