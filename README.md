@@ -109,3 +109,7 @@ AI 在查询前应优先读取项目中的：
 涉及系统表时，应参考氚云系统表说明文档：
 
 https://h3yunpro.github.io/docs/database/
+
+## 许可证
+
+本项目采用 [GNU General Public License v3.0](LICENSE)（仅限第 3 版）许可。
