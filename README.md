@@ -37,7 +37,11 @@
 - `.h3token`：保存从浏览器 Cookie 中取得的 `h3_token` 值。
 - `cmax.json`：其中的 `engineCode` 是氚云企业引擎编码。
 
-推荐把这两个文件放在氚云应用项目目录下。AI 调用工具时可以传入 `projectDir`，也可以让工具从当前工作区自动向上或向下查找。
+推荐把这两个文件放在氚云应用项目目录下。AI 调用 `query_sql` 时必须通过 `projectDir` 传入当前 Agent 所在工作区目录的绝对路径。
+
+MCP 只会在 `projectDir` 及其下级有限层级内查找 `.h3token` 和 `cmax.json`，不会向上查找，不会使用 MCP 的当前进程目录，也不会读取环境变量中的项目路径、token 或 engineCode。
+
+如果没有找到凭据文件，错误信息会显示已搜索的 `projectDir` 和当前 MCP 执行目录。当前 MCP 执行目录仅用于帮助用户判断目录是否传错，不会被用于搜索。AI 应让用户提供 `.h3token` 和 `cmax.json` 所在目录，并将该目录作为新的 `projectDir` 重新调用。
 
 示例目录：
 
@@ -48,14 +52,7 @@ C:\workspace\h3yun-projects
     └── .h3token
 ```
 
-如果当前工作区下有多个氚云应用目录，AI 应在调用 `query_sql` 时通过 `projectDir` 指定目标项目。
-
-如果不想放文件，也可以通过环境变量提供：
-
-```text
-H3YUN_TOKEN=<h3_token>
-H3YUN_ENGINE_CODE=<engineCode>
-```
+如果当前工作区下有多个凭据完整的氚云应用目录，AI 应将 `projectDir` 精确传到目标应用目录，避免产生歧义。
 
 ## 工具
 
@@ -75,7 +72,9 @@ H3YUN_ENGINE_CODE=<engineCode>
 
 行为规则：
 
-- 只允许 `select`、`with`、`show`、`describe`、`desc`、`explain` 等查询类 SQL。
+- `projectDir` 必填，值为当前 Agent 所在工作区目录或目标氚云应用目录的绝对路径。
+- 项目凭据只从 `projectDir` 及其下级目录中的文件读取，不使用环境变量或其他隐式目录。
+- 只允许以 `select` 或 `with` 开头的查询。实测 `show`、`describe`、`desc`、`explain` 会因氚云接口在 SQL 外层包装查询而执行失败。
 - SQL 末尾的分号会自动移除。
 - 用户未指定查询条数时，`select`/`with` 查询会默认追加 `LIMIT 20`。
 - 氚云业务表通常是 `i_表单编码`，系统表通常以 `h_` 开头。

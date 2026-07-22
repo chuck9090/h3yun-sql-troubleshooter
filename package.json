@@ -1,6 +1,6 @@
 {
   "name": "h3yun-sql-troubleshooter",
-  "version": "0.1.0",
+  "version": "1.0.1",
   "description": "用于查询氚云 SQL 数据的 MCP 工具，也可辅助 AI 排查氚云业务问题。",
   "license": "GPL-3.0-only",
   "type": "module",

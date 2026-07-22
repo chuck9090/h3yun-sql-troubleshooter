@@ -8,7 +8,7 @@ import { z } from "zod";
 
 const server = new McpServer({
   name: "h3yun-sql-troubleshooter",
-  version: "0.1.0",
+  version: "1.0.1",
 });
 
 const DEFAULT_H3YUN_BASE_URL = "https://www.h3yun.com";
@@ -24,9 +24,6 @@ const config = {
   sqlApiPath: process.env.H3YUN_SQL_API_PATH || DEFAULT_H3YUN_SQL_API_PATH,
   reportingActionUrl: process.env.H3YUN_REPORTING_ACTION_URL,
   reportingActionPath: process.env.H3YUN_REPORTING_ACTION_PATH || DEFAULT_H3YUN_REPORTING_ACTION_PATH,
-  token: process.env.H3YUN_TOKEN,
-  engineCode: process.env.H3YUN_ENGINE_CODE,
-  projectDir: process.env.H3YUN_PROJECT_DIR,
   sqlField: process.env.H3YUN_SQL_FIELD || "sql",
   timeoutMs: Number(process.env.H3YUN_SQL_TIMEOUT_MS || 30000),
   allowWrite: process.env.H3YUN_SQL_ALLOW_WRITE === "true",
@@ -37,17 +34,17 @@ server.registerTool(
   {
     title: "查询氚云数据",
     description:
-      "用于查询氚云 SQL 数据，也可辅助 AI 排查氚云业务问题、表单数据异常、字段值异常、关联数据异常、流程或审批异常、业务规则执行结果异常、线上数据不一致等问题。氚云数据库是 MySQL，构造 SQL 时应按 MySQL 语法编写。传给接口的 SQL 末尾不要加分号，因为平台会在外层再包一层查询。用户未指定查询条数时，select/with 查询会默认限制为 20 条以内。调用前应先参考项目根目录的 cmax.json 获取应用下的表单编码和表单名称，并参考各表单目录下的 fields.md 获取表单字段和控件编码。工具会优先使用环境变量 H3YUN_TOKEN/H3YUN_ENGINE_CODE；未配置时会自动查找项目目录中的 .h3token 和 cmax.json 的 engineCode。查找规则支持从当前工作区向上查找，也支持向下有限层级查找，例如工作区是多个项目的上级目录时，可自动发现下级氚云应用目录。氚云业务表数据库表名规则为 i_表单编码，系统表通常以 h_ 开头；涉及 h_ 系统表时应参考氚云系统表说明文档：https://h3yunpro.github.io/docs/database/ 。默认只执行只读 SQL，不要要求用户手动查数据库；如果需要确认真实数据，应主动构造只读 SQL 调用本工具。",
+      "用于查询氚云 SQL 数据，也可辅助 AI 排查氚云业务问题、表单数据异常、字段值异常、关联数据异常、流程或审批异常、业务规则执行结果异常、线上数据不一致等问题。氚云数据库是 MySQL，构造 SQL 时应按 MySQL 语法编写。氚云接口实测只支持以 select 或 with 开头的查询；show、describe、desc、explain 会因接口在 SQL 外层包装查询而执行失败。传给接口的 SQL 末尾不要加分号。用户未指定查询条数时，select/with 查询会默认限制为 20 条以内。调用本工具时，AI 必须通过 projectDir 传入当前 Agent 所在的工作区目录。MCP 只会在该目录及其下级有限层级内查找 .h3token 和 cmax.json，不会向上查找，不会读取当前进程目录、用户目录或环境变量中的项目路径和凭据。写 SQL 前应参考 cmax.json 获取表单编码和表单名称，并参考各表单目录下的 fields.md 获取字段和控件编码。氚云业务表数据库表名规则为 i_表单编码，系统表通常以 h_ 开头；涉及 h_ 系统表时应参考氚云系统表说明文档：https://h3yunpro.github.io/docs/database/ 。默认只执行只读 SQL，不要要求用户手动查数据库；如果需要确认真实数据，应主动构造只读 SQL 调用本工具。",
     inputSchema: {
-      sql: z.string().min(1).describe("用于查询氚云数据的只读 SQL，也可用于排查氚云问题。氚云数据库是 MySQL，应使用 MySQL 语法。SQL 末尾不要加分号，因为平台会在外层再包一层查询。用户未指定查询条数时，select/with 查询会默认限制为 20 条以内。业务表表名通常是 i_表单编码，系统表通常以 h_ 开头。写 SQL 前应优先读取 cmax.json 和相关 fields.md，确认表单编码、表单名称、字段名称和控件编码；涉及 h_ 系统表时应参考 https://h3yunpro.github.io/docs/database/ 。不要执行 insert、update、delete、drop、alter 等写入或结构变更语句。"),
+      sql: z.string().min(1).describe("用于查询氚云数据的只读 SQL，也可用于排查氚云问题。只允许以 select 或 with 开头；show、describe、desc、explain 经氚云接口实测无法执行。氚云数据库是 MySQL，应使用 MySQL 语法。SQL 末尾不要加分号，因为平台会在外层再包一层查询。用户未指定查询条数时，select/with 查询会默认限制为 20 条以内。业务表表名通常是 i_表单编码，系统表通常以 h_ 开头。写 SQL 前应优先读取 cmax.json 和相关 fields.md，确认表单编码、表单名称、字段名称和控件编码；涉及 h_ 系统表时应参考 https://h3yunpro.github.io/docs/database/ 。不要执行 insert、update、delete、drop、alter 等写入或结构变更语句。"),
       params: z
         .record(z.any())
         .optional()
         .describe("可选参数，会原样转发给氚云平台查询接口。"),
       projectDir: z
         .string()
-        .optional()
-        .describe("可选的氚云应用项目目录或其上级工作区目录。通常不需要用户配置；如果 AI 客户端知道当前工作区路径，可传入该路径。未提供时会尝试从 INIT_CWD、当前工作目录向上查找，也会向下有限层级查找 cmax.json 和 .h3token。"),
+        .min(1)
+        .describe("必填。AI 调用工具时必须传入当前 Agent 所在工作区目录的绝对路径。MCP 只在该目录及其下级有限层级内查找 cmax.json 和 .h3token，不会访问其上级目录、当前进程目录、用户目录或环境变量中的项目路径。"),
       reason: z
         .string()
         .optional()
@@ -57,24 +54,30 @@ server.registerTool(
   async ({ sql, params, projectDir, reason }) => {
     const apiUrl = getSqlApiUrl();
     const projectContext = loadProjectContext(projectDir);
-    const token = config.token || projectContext.token;
-    const engineCode = config.engineCode || projectContext.engineCode;
+    const token = projectContext.token;
+    const engineCode = projectContext.engineCode;
 
     if (!apiUrl) {
       throw new Error("当前 MCP 服务尚未内置氚云 SQL 查询接口路径。请先在 src/index.js 中设置 DEFAULT_H3YUN_SQL_API_PATH，或临时配置 H3YUN_SQL_API_URL/H3YUN_SQL_API_PATH。该地址通常固定，确认后不需要在每个 AI 工具或项目里重复配置。");
     }
 
     if (!token) {
-      throw new Error("未找到氚云身份校验参数。请在当前项目或其下级氚云应用目录中提供 .h3token 文件，或配置环境变量 H3YUN_TOKEN，或在调用工具时传入包含 .h3token 的 projectDir。该文件内容是从浏览器 Cookie 中获取的 h3_token 值。");
+      throw new Error(
+        `在指定目录及其下级目录中未找到 .h3token。${formatProjectDirectoryHint(projectDir)} `
+        + "请让用户提供 .h3token 和 cmax.json 所在目录，再将该目录作为 projectDir 重新调用。本文件内容是从浏览器 Cookie 中获取的 h3_token 值。"
+      );
     }
 
     if (!engineCode) {
-      throw new Error("未找到氚云企业引擎编码 enginecode。请在当前项目或其下级氚云应用目录中提供包含 engineCode 的 cmax.json，或配置环境变量 H3YUN_ENGINE_CODE，或在调用工具时传入包含 cmax.json 的 projectDir。");
+      throw new Error(
+        `在指定目录及其下级目录中未找到包含 engineCode 的 cmax.json。${formatProjectDirectoryHint(projectDir)} `
+        + "请让用户提供 .h3token 和 cmax.json 所在目录，再将该目录作为 projectDir 重新调用。"
+      );
     }
 
     if (!config.allowWrite && !isReadOnlySql(sql)) {
       throw new Error(
-        "默认只允许执行查询类 SQL。只有在明确需要写入操作时，才可设置 H3YUN_SQL_ALLOW_WRITE=true。"
+        "默认只允许执行以 select 或 with 开头的查询。show、describe、desc、explain 经氚云接口实测无法执行。只有在明确需要写入操作时，才可设置 H3YUN_SQL_ALLOW_WRITE=true。"
       );
     }
 
@@ -123,17 +126,18 @@ server.registerTool(
           "",
           "1. query_sql 的核心用途是查询氚云 SQL 数据；当用户需要查看真实库数据，或排查氚云业务问题、表单数据异常、字段值异常、关联数据异常、流程或审批异常、业务规则执行结果异常、线上数据不一致时，也适合主动使用。",
           "2. 不要要求用户手动查数据库；如果问题需要确认真实数据，应主动构造只读 SQL 并调用 query_sql。",
-          "3. 氚云数据库是 MySQL，构造 SQL 时应按 MySQL 语法编写，例如使用 LIMIT 控制返回行数；如果用户未指定要查多少条，query_sql 会对 select/with 查询默认追加 LIMIT 20。",
-          "4. 传给接口的 SQL 末尾不要加分号，因为平台拿到 SQL 后会在外层再包一层查询。",
-          "5. 写 SQL 前，优先查看氚云应用目录下的 cmax.json。该文件记录当前应用下的所有表单编码和表单名称，可用于确定目标表单。实际工作区可能是多个项目的上级目录，此时 cmax.json 可能在下级应用目录中。",
-          "6. 写 SQL 前，优先查看目标表单目录下的 fields.md。该文件记录表单名、字段名、控件编码，可用于确定 select 字段和 where 条件字段。",
-          "7. 氚云业务表的数据库表名规则是 i_表单编码。例如表单编码为 D000001Example，则业务表通常是 i_D000001Example。",
-          "8. 氚云系统表通常以 h_ 开头。查询流程、审批、组织、系统元数据等信息时，应优先考虑 h_ 开头的系统表。",
-          "9. 涉及 h_ 系统表时，应参考氚云系统表说明文档：https://h3yunpro.github.io/docs/database/ 。该文档包含氚云所有系统表的说明。",
-          "10. 默认只使用 select、with、show、describe、desc、explain 等只读 SQL。不要执行 insert、update、delete、drop、alter、create 等写入或结构变更 SQL。",
-          "11. 查询时尽量加 where 条件和 limit，避免一次读取过多数据；未指定 limit 时默认最多查询 20 条。",
-          "12. 如果用户只提供了表单名称，应先根据 cmax.json 找到表单编码，再按 i_表单编码 拼出业务表名。",
-          "13. 如果用户只提供了字段中文名，应先根据 fields.md 找到对应控件编码，再用控件编码写 SQL。",
+          "3. 调用 query_sql 时必须把当前 Agent 所在的工作区目录作为 projectDir 传入。MCP 只在该目录及其下级有限层级内查找 .h3token 和 cmax.json，不使用环境变量或其他隐式目录。",
+          "4. 氚云数据库是 MySQL，构造 SQL 时应按 MySQL 语法编写，例如使用 LIMIT 控制返回行数；如果用户未指定要查多少条，query_sql 会对 select/with 查询默认追加 LIMIT 20。",
+          "5. 传给接口的 SQL 末尾不要加分号，因为平台拿到 SQL 后会在外层再包一层查询。",
+          "6. 写 SQL 前，优先查看氚云应用目录下的 cmax.json。该文件记录当前应用下的所有表单编码和表单名称，可用于确定目标表单。实际工作区可能是多个项目的上级目录，此时 cmax.json 可能在下级应用目录中。",
+          "7. 写 SQL 前，优先查看目标表单目录下的 fields.md。该文件记录表单名、字段名、控件编码，可用于确定 select 字段和 where 条件字段。",
+          "8. 氚云业务表的数据库表名规则是 i_表单编码。例如表单编码为 D000001Example，则业务表通常是 i_D000001Example。",
+          "9. 氚云系统表通常以 h_ 开头。查询流程、审批、组织、系统元数据等信息时，应优先考虑 h_ 开头的系统表。",
+          "10. 涉及 h_ 系统表时，应参考氚云系统表说明文档：https://h3yunpro.github.io/docs/database/ 。该文档包含氚云所有系统表的说明。",
+          "11. 只使用以 select 或 with 开头的查询。show、describe、desc、explain 经氚云接口实测会因外层查询包装而执行失败。不要执行 insert、update、delete、drop、alter、create 等写入或结构变更 SQL。",
+          "12. 查询时尽量加 where 条件和 limit，避免一次读取过多数据；未指定 limit 时默认最多查询 20 条。",
+          "13. 如果用户只提供了表单名称，应先根据 cmax.json 找到表单编码，再按 i_表单编码 拼出业务表名。",
+          "14. 如果用户只提供了字段中文名，应先根据 fields.md 找到对应控件编码，再用控件编码写 SQL。",
         ].join("\n"),
       },
     ],
@@ -298,61 +302,70 @@ function loadProjectContext(projectDir) {
 }
 
 function findProjectRoot(projectDir) {
-  const candidates = [
-    projectDir,
-    config.projectDir,
-    process.env.INIT_CWD,
-    process.env.PWD,
-    process.env.OLDPWD,
-    process.cwd(),
-  ]
-    .filter(Boolean)
-    .map((candidate) => path.resolve(candidate));
-
-  for (const candidate of candidates) {
-    const root = findUp(candidate, ["cmax.json", ".h3token"]);
-    if (root) {
-      return root;
-    }
+  if (typeof projectDir !== "string" || !projectDir.trim()) {
+    throw new Error("调用 query_sql 时必须通过 projectDir 传入当前 Agent 所在的工作区目录。");
   }
 
-  const foundRoots = [];
-  for (const candidate of candidates) {
-    foundRoots.push(...findDown(candidate, ["cmax.json", ".h3token"], DEFAULT_PROJECT_SEARCH_DEPTH));
+  if (!path.isAbsolute(projectDir)) {
+    throw new Error(`projectDir 必须是绝对路径，不能基于当前 MCP 执行目录解析相对路径：${projectDir}`);
   }
 
-  const uniqueRoots = [...new Set(foundRoots)];
+  const root = path.resolve(projectDir);
+
+  if (!fs.existsSync(root) || !fs.statSync(root).isDirectory()) {
+    throw new Error(`projectDir 必须是当前 Agent 所在的有效工作区目录：${root}`);
+  }
+
+  const projectRoot = selectProjectRoot(findDown(root, ["cmax.json", ".h3token"], DEFAULT_PROJECT_SEARCH_DEPTH));
+
+  if (!projectRoot) {
+    throw new Error(
+      `在指定目录及其下级 ${DEFAULT_PROJECT_SEARCH_DEPTH} 层内未找到 .h3token 或 cmax.json。${formatProjectDirectoryHint(root)} `
+      + "请让用户提供这两个文件所在目录，再将该目录作为 projectDir 重新调用。"
+    );
+  }
+
+  return projectRoot;
+}
+
+function formatProjectDirectoryHint(projectDir) {
+  return `已搜索目录：${path.resolve(projectDir)}。当前 MCP 执行目录：${process.cwd()}。`;
+}
+
+function selectProjectRoot(roots) {
+  const uniqueRoots = [...new Set(roots)];
+  const completeRoots = uniqueRoots.filter(hasCompleteProjectContext);
+
+  if (completeRoots.length === 1) {
+    return completeRoots[0];
+  }
+
+  if (completeRoots.length > 1) {
+    throwMultipleProjectRoots(completeRoots);
+  }
 
   if (uniqueRoots.length === 1) {
     return uniqueRoots[0];
   }
 
   if (uniqueRoots.length > 1) {
-    throw new Error(
-      `在当前工作区下发现多个氚云应用目录，请在调用 query_sql 时通过 projectDir 指定当前项目：${uniqueRoots.join("; ")}`
-    );
+    throwMultipleProjectRoots(uniqueRoots);
   }
 
   return "";
 }
 
-function findUp(startDir, filenames) {
-  let current = fs.existsSync(startDir) && fs.statSync(startDir).isDirectory()
-    ? startDir
-    : path.dirname(startDir);
+function hasCompleteProjectContext(root) {
+  const cmaxConfig = readJsonIfExists(path.join(root, "cmax.json"));
+  const hasToken = Boolean(readTextIfExists(path.join(root, ".h3token")) || cmaxConfig?.h3Token);
+  const hasEngineCode = Boolean(cmaxConfig?.engineCode);
+  return hasToken && hasEngineCode;
+}
 
-  while (true) {
-    if (filenames.some((filename) => fs.existsSync(path.join(current, filename)))) {
-      return current;
-    }
-
-    const parent = path.dirname(current);
-    if (parent === current) {
-      return "";
-    }
-
-    current = parent;
-  }
+function throwMultipleProjectRoots(roots) {
+  throw new Error(
+    `在当前工作区下发现多个氚云应用目录，请在调用 query_sql 时通过 projectDir 指定当前项目：${roots.join("; ")}`
+  );
 }
 
 function findDown(startDir, filenames, maxDepth) {
@@ -370,7 +383,6 @@ function findDown(startDir, filenames, maxDepth) {
 
     if (filenames.some((filename) => fs.existsSync(path.join(current.dir, filename)))) {
       results.push(current.dir);
-      continue;
     }
 
     if (current.depth >= maxDepth) {
@@ -426,7 +438,7 @@ function isReadOnlySql(sql) {
     .trim()
     .toLowerCase();
 
-  return /^(select|with|show|describe|desc|explain)\b/.test(normalized);
+  return /^(select|with)\b/.test(normalized);
 }
 
 function normalizeSqlForH3Yun(sql) {
