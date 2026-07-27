@@ -8,7 +8,7 @@ import { z } from "zod";
 
 const server = new McpServer({
   name: "h3yun-sql-troubleshooter",
-  version: "1.0.1",
+  version: "1.1.0",
 });
 
 const DEFAULT_H3YUN_BASE_URL = "https://www.h3yun.com";
@@ -82,7 +82,7 @@ server.registerTool(
     }
 
     const normalizedSql = normalizeSqlForH3Yun(sql);
-    const userId = await resolveExecutionUserId(token, engineCode);
+    const userId = await resolveExecutionUserId(token, engineCode, projectContext.systemUserId);
     const payload = buildSqlPayload(normalizedSql, params, reason, engineCode, userId);
 
     const response = await postWithTimeout(apiUrl, payload, config.timeoutMs, token, engineCode, userId);
@@ -129,7 +129,7 @@ server.registerTool(
           "3. 调用 query_sql 时必须把当前 Agent 所在的工作区目录作为 projectDir 传入。MCP 只在该目录及其下级有限层级内查找 .h3token 和 cmax.json，不使用环境变量或其他隐式目录。",
           "4. 氚云数据库是 MySQL，构造 SQL 时应按 MySQL 语法编写，例如使用 LIMIT 控制返回行数；如果用户未指定要查多少条，query_sql 会对 select/with 查询默认追加 LIMIT 20。",
           "5. 传给接口的 SQL 末尾不要加分号，因为平台拿到 SQL 后会在外层再包一层查询。",
-          "6. 写 SQL 前，优先查看氚云应用目录下的 cmax.json。该文件记录当前应用下的所有表单编码和表单名称，可用于确定目标表单。实际工作区可能是多个项目的上级目录，此时 cmax.json 可能在下级应用目录中。",
+          "6. 写 SQL 前，优先查看氚云应用目录下的 cmax.json。该文件记录当前应用下的所有表单编码和表单名称，可用于确定目标表单。实际工作区可能是多个项目的上级目录，此时 cmax.json 可能在下级应用目录中。如果 cmax.json 中包含 systemUserId 字段，MCP 会直接使用该值执行 SQL，无需每次查询 System 用户 ID。",
           "7. 写 SQL 前，优先查看目标表单目录下的 fields.md。该文件记录表单名、字段名、控件编码，可用于确定 select 字段和 where 条件字段。",
           "8. 氚云业务表的数据库表名规则是 i_表单编码。例如表单编码为 D000001Example，则业务表通常是 i_D000001Example。",
           "9. 氚云系统表通常以 h_ 开头。查询流程、审批、组织、系统元数据等信息时，应优先考虑 h_ 开头的系统表。",
@@ -258,7 +258,11 @@ function buildSqlPayload(sql, params, reason, engineCode, userId) {
   };
 }
 
-async function resolveExecutionUserId(token, engineCode) {
+async function resolveExecutionUserId(token, engineCode, cachedSystemUserId) {
+  if (cachedSystemUserId) {
+    return cachedSystemUserId;
+  }
+
   const payload = {
     ActionName: "CheckSQL",
     Sql: SYSTEM_USER_SQL,
@@ -298,6 +302,7 @@ function loadProjectContext(projectDir) {
     projectRoot: root,
     token: typeof token === "string" ? token.trim() : "",
     engineCode: typeof cmaxConfig?.engineCode === "string" ? cmaxConfig.engineCode.trim() : "",
+    systemUserId: typeof cmaxConfig?.systemUserId === "string" ? cmaxConfig.systemUserId.trim() : "",
   };
 }
 
