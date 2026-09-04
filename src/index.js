@@ -8,13 +8,12 @@ import { z } from "zod";
 
 const server = new McpServer({
   name: "h3yun-sql-troubleshooter",
-  version: "1.2.0",
+  version: "1.2.1",
 });
 
 const DEFAULT_H3YUN_BASE_URL = "https://www.h3yun.com";
 const DEFAULT_H3YUN_SQL_API_PATH = "/rx-report/integrate/data-source/v1/customsql/previewSql";
 const DEFAULT_H3YUN_REPORTING_ACTION_PATH = "/Console/Reporting/OnAction";
-const DEFAULT_PROJECT_SEARCH_DEPTH = 4;
 const CODE_FOLDER_NAME = "氚云代码";
 const DEFAULT_QUERY_LIMIT = 20;
 const SYSTEM_USER_SQL = "select ObjectId from h_user where name='System'";
@@ -35,7 +34,7 @@ server.registerTool(
   {
     title: "查询氚云数据",
     description:
-      "用于查询氚云 SQL 数据，也可辅助 AI 排查氚云业务问题、表单数据异常、字段值异常、关联数据异常、流程或审批异常、业务规则执行结果异常、线上数据不一致等问题。氚云数据库是 MySQL，构造 SQL 时应按 MySQL 语法编写。氚云接口实测只支持以 select 或 with 开头的查询；show、describe、desc、explain 会因接口在 SQL 外层包装查询而执行失败。传给接口的 SQL 末尾不要加分号。用户未指定查询条数时，select/with 查询会默认限制为 20 条以内。调用本工具时，AI 必须通过 projectDir 传入当前 Agent 所在的工作区目录。MCP 会在该目录及其下级有限层级内查找 cmax.json，并从应用目录的父级氚云代码目录读取 .h3token，不会读取当前进程目录、用户目录或环境变量中的项目路径和凭据。写 SQL 前应参考 cmax.json 获取表单编码和表单名称，并参考各表单目录下的 fields.md 获取字段和控件编码。氚云业务表数据库表名规则为 i_表单编码，系统表通常以 h_ 开头；涉及 h_ 系统表时应参考氚云系统表说明文档：https://h3yunpro.github.io/docs/database/ 。默认只执行只读 SQL，不要要求用户手动查数据库；如果需要确认真实数据，应主动构造只读 SQL 调用本工具。",
+      "用于查询氚云 SQL 数据，也可辅助 AI 排查氚云业务问题、表单数据异常、字段值异常、关联数据异常、流程或审批异常、业务规则执行结果异常、线上数据不一致等问题。氚云数据库是 MySQL，构造 SQL 时应按 MySQL 语法编写。氚云接口实测只支持以 select 或 with 开头的查询；show、describe、desc、explain 会因接口在 SQL 外层包装查询而执行失败。传给接口的 SQL 末尾不要加分号。用户未指定查询条数时，select/with 查询会默认限制为 20 条以内。调用本工具时，AI 必须通过 projectDir 传入当前目录的绝对路径。若当前目录名是“氚云代码”，MCP 只检查当前目录；否则只检查当前目录的直接子目录中名为“氚云代码”的目录。两种情况下均要求该目录同时存在 .h3token 和根 cmax.json，不会搜索更上级、更下级或其他名称目录。根 cmax.json 使用 version: 2 和 apps 结构，engineCode、h3yunApiVersion、systemUserId 位于根对象并由所有应用共用。写 SQL 前应参考根 cmax.json 获取表单编码和表单名称，并参考各表单目录下的 fields.md 获取字段和控件编码。氚云业务表数据库表名规则为 i_表单编码，系统表通常以 h_ 开头；涉及 h_ 系统表时应参考氚云系统表说明文档：https://h3yunpro.github.io/docs/database/ 。默认只执行只读 SQL，不要要求用户手动查数据库；如果需要确认真实数据，应主动构造只读 SQL 调用本工具。",
     inputSchema: {
       sql: z.string().min(1).describe("用于查询氚云数据的只读 SQL，也可用于排查氚云问题。只允许以 select 或 with 开头；show、describe、desc、explain 经氚云接口实测无法执行。氚云数据库是 MySQL，应使用 MySQL 语法。SQL 末尾不要加分号，因为平台会在外层再包一层查询。用户未指定查询条数时，select/with 查询会默认限制为 20 条以内。业务表表名通常是 i_表单编码，系统表通常以 h_ 开头。写 SQL 前应优先读取 cmax.json 和相关 fields.md，确认表单编码、表单名称、字段名称和控件编码；涉及 h_ 系统表时应参考 https://h3yunpro.github.io/docs/database/ 。不要执行 insert、update、delete、drop、alter 等写入或结构变更语句。"),
       params: z
@@ -45,7 +44,7 @@ server.registerTool(
       projectDir: z
         .string()
         .min(1)
-        .describe("必填。AI 调用工具时必须传入当前 Agent 所在工作区目录的绝对路径。MCP 会在该目录及其下级有限层级内查找 cmax.json，并从应用目录的父级氚云代码目录读取 .h3token，不会访问当前进程目录、用户目录或环境变量中的项目路径。"),
+       .describe("必填。AI 调用工具时必须传入当前目录的绝对路径。当前目录是“氚云代码”时只检查当前目录；否则只检查直接下一层的“氚云代码”目录。该目录必须同时存在 .h3token 和根 cmax.json；不会搜索更上级、更下级或其他名称目录。"),
       reason: z
         .string()
         .optional()
@@ -63,17 +62,11 @@ server.registerTool(
     }
 
     if (!token) {
-      throw new Error(
-        `在应用目录的父级氚云代码目录中未找到 .h3token。${formatProjectDirectoryHint(projectDir)} `
-        + "请让用户提供 .h3token 和 cmax.json 所在目录，再将该目录作为 projectDir 重新调用。本文件内容是从浏览器 Cookie 中获取的 h3_token 值。"
-      );
+      throw new Error(`氚云代码目录缺少 .h3token，已停止查询。${formatProjectDirectoryHint(projectDir)} 请补充该文件后重试。`);
     }
 
     if (!engineCode) {
-      throw new Error(
-        `在指定目录及其下级目录中未找到包含 engineCode 的 cmax.json。${formatProjectDirectoryHint(projectDir)} `
-        + "请让用户提供 .h3token 和 cmax.json 所在目录，再将该目录作为 projectDir 重新调用。"
-      );
+      throw new Error(`根 cmax.json 中未找到共享的 engineCode，已停止查询。${formatProjectDirectoryHint(projectDir)}`);
     }
 
     if (!config.allowWrite && !isReadOnlySql(sql)) {
@@ -127,10 +120,10 @@ server.registerTool(
           "",
           "1. query_sql 的核心用途是查询氚云 SQL 数据；当用户需要查看真实库数据，或排查氚云业务问题、表单数据异常、字段值异常、关联数据异常、流程或审批异常、业务规则执行结果异常、线上数据不一致时，也适合主动使用。",
           "2. 不要要求用户手动查数据库；如果问题需要确认真实数据，应主动构造只读 SQL 并调用 query_sql。",
-          "3. 调用 query_sql 时必须把当前 Agent 所在的工作区目录作为 projectDir 传入。MCP 会在该目录及其下级有限层级内查找 cmax.json，并从应用目录的父级氚云代码目录读取 .h3token，不使用环境变量或其他隐式目录。",
+           "3. 调用 query_sql 时必须把当前 Agent 所在的工作区目录或氚云代码目录作为 projectDir 传入。若传入的是工作区目录, MCP 只检查其直接下一层的“氚云代码”目录；若传入的是氚云代码目录,只检查当前目录。根配置使用 version: 2 和 apps 结构,且必须同时存在 .h3token。",
           "4. 氚云数据库是 MySQL，构造 SQL 时应按 MySQL 语法编写，例如使用 LIMIT 控制返回行数；如果用户未指定要查多少条，query_sql 会对 select/with 查询默认追加 LIMIT 20。",
           "5. 传给接口的 SQL 末尾不要加分号，因为平台拿到 SQL 后会在外层再包一层查询。",
-          "6. 写 SQL 前，优先查看氚云应用目录下的 cmax.json。该文件记录当前应用下的所有表单编码和表单名称，可用于确定目标表单。实际工作区可能是多个项目的上级目录，此时 cmax.json 可能在下级应用目录中。如果 cmax.json 中包含 systemUserId 字段，MCP 会直接使用该值执行 SQL，无需每次查询 System 用户 ID。",
+           "6. 写 SQL 前，优先查看氚云代码目录下的根 cmax.json。该文件使用 version: 2 和 apps 结构，根对象统一记录所有应用共用的 engineCode、h3yunApiVersion 和 systemUserId，apps 按应用后缀记录应用编码、应用名称以及表单编码和表单名称，可用于确定目标应用和表单。MCP 直接使用根级 systemUserId 执行 SQL，不会重复查询 System 用户 ID。",
           "7. 写 SQL 前，优先查看目标表单目录下的 fields.md。该文件记录表单名、字段名、控件编码，可用于确定 select 字段和 where 条件字段。",
           "8. 氚云业务表的数据库表名规则是 i_表单编码。例如表单编码为 D000001Example，则业务表通常是 i_D000001Example。",
           "9. 氚云系统表通常以 h_ 开头。查询流程、审批、组织、系统元数据等信息时，应优先考虑 h_ 开头的系统表。",
@@ -166,6 +159,21 @@ async function postWithTimeout(url, payload, timeoutMs, token, engineCode, userI
   }
 }
 
+function buildHeaders(token, engineCode, userId) {
+  const headers = {
+    Accept: "application/json, text/plain, */*",
+    "Accept-Language": "zh-CN",
+    Authorization: `Bearer ${token}`,
+    "Cache-Control": "no-cache",
+    "Content-Type": "application/json",
+    EngineCode: engineCode,
+    Origin: config.baseUrl,
+    Pragma: "no-cache",
+  };
+
+  return headers;
+}
+
 async function postFormWithTimeout(url, payload, timeoutMs, token, engineCode) {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeoutMs);
@@ -187,23 +195,8 @@ async function postFormWithTimeout(url, payload, timeoutMs, token, engineCode) {
   }
 }
 
-function buildHeaders(token, engineCode, userId) {
-  const headers = {
-    Accept: "application/json, text/plain, */*",
-    "Accept-Language": "zh-CN",
-    Authorization: `Bearer ${token}`,
-    "Cache-Control": "no-cache",
-    "Content-Type": "application/json",
-    EngineCode: engineCode,
-    Origin: config.baseUrl,
-    Pragma: "no-cache",
-  };
-
-  return headers;
-}
-
 function buildReportingHeaders(token, engineCode) {
-  const headers = {
+  return {
     Accept: "application/json, text/javascript, */*; q=0.01",
     "Accept-Language": "zh-CN,zh;q=0.9",
     Authorization: `Bearer ${token}`,
@@ -214,8 +207,6 @@ function buildReportingHeaders(token, engineCode) {
     Pragma: "no-cache",
     "X-Requested-With": "XMLHttpRequest",
   };
-
-  return headers;
 }
 
 function getSqlApiUrl() {
@@ -238,10 +229,10 @@ function getReportingActionUrl() {
   }
 
   const baseUrl = config.baseUrl.replace(/\/$/, "");
-  const path = config.reportingActionPath.startsWith("/")
+  const actionPath = config.reportingActionPath.startsWith("/")
     ? config.reportingActionPath
     : `/${config.reportingActionPath}`;
-  return `${baseUrl}${path}`;
+  return `${baseUrl}${actionPath}`;
 }
 
 function buildSqlPayload(sql, params, reason, engineCode, userId) {
@@ -281,7 +272,6 @@ async function resolveExecutionUserId(token, engineCode, cachedSystemUserId) {
 
   const rows = body?.ReturnData?.rows;
   const systemUserId = Array.isArray(rows) && rows.length > 0 ? rows[0]?.objectid || rows[0]?.ObjectId : "";
-
   if (!systemUserId) {
     throw new Error(`未查询到 System 用户 ID，请确认 SQL 可执行：${SYSTEM_USER_SQL}`);
   }
@@ -290,24 +280,24 @@ async function resolveExecutionUserId(token, engineCode, cachedSystemUserId) {
 }
 
 function loadProjectContext(projectDir) {
-  const root = findProjectRoot(projectDir);
+  const context = findProjectContext(projectDir);
 
-  if (!root) {
+  if (!context) {
     return {};
   }
 
-  const cmaxConfig = readJsonIfExists(path.join(root, "cmax.json"));
-  const token = resolveProjectToken(root);
+  const { root, workspaceConfig } = context;
+  const token = readTextIfExists(path.join(root, ".h3token"));
 
   return {
     projectRoot: root,
     token: typeof token === "string" ? token.trim() : "",
-    engineCode: typeof cmaxConfig?.engineCode === "string" ? cmaxConfig.engineCode.trim() : "",
-    systemUserId: typeof cmaxConfig?.systemUserId === "string" ? cmaxConfig.systemUserId.trim() : "",
+    engineCode: typeof workspaceConfig?.engineCode === "string" ? workspaceConfig.engineCode.trim() : "",
+    systemUserId: typeof workspaceConfig?.systemUserId === "string" ? workspaceConfig.systemUserId.trim() : "",
   };
 }
 
-function findProjectRoot(projectDir) {
+function findProjectContext(projectDir) {
   if (typeof projectDir !== "string" || !projectDir.trim()) {
     throw new Error("调用 query_sql 时必须通过 projectDir 传入当前 Agent 所在的工作区目录。");
   }
@@ -322,108 +312,80 @@ function findProjectRoot(projectDir) {
     throw new Error(`projectDir 必须是当前 Agent 所在的有效工作区目录：${root}`);
   }
 
-  const projectRoot = selectProjectRoot(findDown(root, ["cmax.json"], DEFAULT_PROJECT_SEARCH_DEPTH));
-
+  const projectRoot = findCodeFolder(root);
   if (!projectRoot) {
-    throw new Error(
-      `在指定目录及其下级 ${DEFAULT_PROJECT_SEARCH_DEPTH} 层内未找到 cmax.json。${formatProjectDirectoryHint(root)} `
-      + "请让用户提供这两个文件所在目录，再将该目录作为 projectDir 重新调用。"
-    );
+    throw new Error(`当前目录或其直接下一层未找到“氚云代码”目录，已停止查询。${formatProjectDirectoryHint(root)}`);
   }
 
-  return projectRoot;
+  const tokenPath = path.join(projectRoot, ".h3token");
+  const configPath = path.join(projectRoot, "cmax.json");
+  if (!fs.existsSync(tokenPath) || !fs.existsSync(configPath)) {
+    const missing = [!fs.existsSync(tokenPath) ? ".h3token" : "", !fs.existsSync(configPath) ? "cmax.json" : ""]
+      .filter(Boolean).join("、");
+    throw new Error(`“氚云代码”目录缺少 ${missing}，已停止查询。${formatProjectDirectoryHint(projectRoot)}`);
+  }
+
+  const workspaceConfig = readJsonIfExists(path.join(projectRoot, "cmax.json"));
+  return { root: projectRoot, workspaceConfig };
 }
 
 function formatProjectDirectoryHint(projectDir) {
   return `已搜索目录：${path.resolve(projectDir)}。当前 MCP 执行目录：${process.cwd()}。`;
 }
 
-function selectProjectRoot(roots) {
-  const uniqueRoots = [...new Set(roots)];
-  const completeRoots = uniqueRoots.filter(hasCompleteProjectContext);
-
-  if (completeRoots.length === 1) {
-    return completeRoots[0];
+function findCodeFolder(startDir) {
+  if (path.basename(startDir) === CODE_FOLDER_NAME) {
+    return startDir;
   }
 
-  if (completeRoots.length > 1) {
-    throwMultipleProjectRoots(completeRoots);
-  }
-
-  if (uniqueRoots.length === 1) {
-    return uniqueRoots[0];
-  }
-
-  if (uniqueRoots.length > 1) {
-    throwMultipleProjectRoots(uniqueRoots);
-  }
-
-  return "";
-}
-
-function hasCompleteProjectContext(root) {
-  const cmaxConfig = readJsonIfExists(path.join(root, "cmax.json"));
-  const hasToken = Boolean(resolveProjectToken(root));
-  const hasEngineCode = Boolean(cmaxConfig?.engineCode);
-  return hasToken && hasEngineCode;
-}
-
-function throwMultipleProjectRoots(roots) {
-  throw new Error(
-    `在当前工作区下发现多个氚云应用目录，请在调用 query_sql 时通过 projectDir 指定当前项目：${roots.join("; ")}`
-  );
-}
-
-function resolveProjectToken(projectRoot) {
-  const parentDir = path.dirname(projectRoot);
-  if (path.basename(parentDir) !== CODE_FOLDER_NAME) {
+  let entries;
+  try {
+    entries = fs.readdirSync(startDir, { withFileTypes: true });
+  } catch {
     return "";
   }
 
-  return readTextIfExists(path.join(parentDir, ".h3token"));
+  const codeFolder = entries.find((entry) => entry.isDirectory() && entry.name === CODE_FOLDER_NAME);
+  return codeFolder ? path.join(startDir, CODE_FOLDER_NAME) : "";
 }
 
-function findDown(startDir, filenames, maxDepth) {
-  if (!fs.existsSync(startDir)) {
-    return [];
+function selectAppConfig(codeFolderPath, workspaceConfig, projectDir) {
+  if (!workspaceConfig?.apps || typeof workspaceConfig.apps !== "object") {
+    return undefined;
   }
 
-  const root = fs.statSync(startDir).isDirectory() ? startDir : path.dirname(startDir);
-  const results = [];
-  const queue = [{ dir: root, depth: 0 }];
-  const ignoredDirs = new Set([".git", "node_modules", ".opencode", ".vscode"]);
+  const appFolders = Object.entries(workspaceConfig.apps)
+    .filter(([, appConfig]) => appConfig && typeof appConfig.appName === "string" && typeof appConfig.appSuffix === "string")
+    .map(([appSuffix, appConfig]) => ({
+      appSuffix,
+      appConfig,
+      appPath: path.join(codeFolderPath, `${sanitizeFolderName(appConfig.appName)}(${appSuffix})`),
+    }));
 
-  while (queue.length > 0) {
-    const current = queue.shift();
-
-    if (filenames.some((filename) => fs.existsSync(path.join(current.dir, filename)))) {
-      results.push(current.dir);
-    }
-
-    if (current.depth >= maxDepth) {
-      continue;
-    }
-
-    let entries = [];
-    try {
-      entries = fs.readdirSync(current.dir, { withFileTypes: true });
-    } catch {
-      continue;
-    }
-
-    for (const entry of entries) {
-      if (!entry.isDirectory() || ignoredDirs.has(entry.name)) {
-        continue;
-      }
-
-      queue.push({
-        dir: path.join(current.dir, entry.name),
-        depth: current.depth + 1,
-      });
-    }
+  const normalizedProjectDir = normalizePathForComparison(projectDir || codeFolderPath);
+  const matched = appFolders.find((item) => {
+    const appPath = normalizePathForComparison(item.appPath);
+    return normalizedProjectDir === appPath || normalizedProjectDir.startsWith(`${appPath}${path.sep}`);
+  });
+  if (matched) {
+    return matched.appConfig;
   }
 
-  return results;
+  if (appFolders.length === 1) {
+    return appFolders[0].appConfig;
+  }
+
+  return undefined;
+}
+
+function sanitizeFolderName(name) {
+  const sanitizedName = String(name || "").replace(/[<>:"/\\|?*\x00-\x1F]/g, "").trim();
+  return sanitizedName || "未命名";
+}
+
+function normalizePathForComparison(filePath) {
+  const normalized = path.resolve(filePath).replace(/[\\/]+$/, "");
+  return process.platform === "win32" ? normalized.toLowerCase() : normalized;
 }
 
 function readJsonIfExists(filePath) {

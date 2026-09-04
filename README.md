@@ -35,13 +35,13 @@
 工具需要两个氚云参数：
 
 - `.h3token`：保存从浏览器 Cookie 中取得的 `h3_token` 值。
-- `cmax.json`：其中的 `engineCode` 是氚云企业引擎编码。
+- `cmax.json`：位于“氚云代码”目录根部，使用 `version: 2` 和 `apps` 结构；根对象记录所有应用共用的 `engineCode`、`h3yunApiVersion` 和 `systemUserId`，`apps` 记录各应用信息。
 
-新版 `h3yun-cmax` 将 `.h3token` 统一保存到应用目录的父级“氚云代码”目录；`cmax.json` 仍位于具体应用目录下。AI 调用 `query_sql` 时必须通过 `projectDir` 传入当前 Agent 所在工作区目录的绝对路径。
+新版 `h3yun-cmax` 将 `.h3token` 和 `cmax.json` 统一保存到“氚云代码”目录；应用目录下不再保存 `cmax.json`。AI 调用 `query_sql` 时必须通过 `projectDir` 传入当前 Agent 所在工作区目录或“氚云代码”目录的绝对路径。
 
-MCP 会在 `projectDir` 及其下级有限层级内查找 `cmax.json`，并只从应用目录的父级“氚云代码”目录读取 `.h3token`；不会使用 MCP 的当前进程目录，也不会读取环境变量中的项目路径、token 或 engineCode。
+如果 `projectDir` 本身就是“氚云代码”目录,MCP 只检查当前目录；否则只检查 `projectDir` 的直接子目录中是否有“氚云代码”目录。找到后必须同时存在 `.h3token` 和根 `cmax.json`,否则立即停止查询。MCP 不会搜索更上级、更下级或其他名称目录,也不会使用当前进程目录或环境变量中的项目路径、token、engineCode。根配置包含多个应用时,应确保传入的当前目录能够唯一确定目标应用。
 
-如果没有找到凭据文件，错误信息会显示已搜索的 `projectDir` 和当前 MCP 执行目录。当前 MCP 执行目录仅用于帮助用户判断目录是否传错，不会被用于搜索。AI 应让用户提供 `.h3token` 和 `cmax.json` 所在目录，并将该目录作为新的 `projectDir` 重新调用。
+如果没有找到“氚云代码”目录或凭据文件,错误信息会显示已检查的 `projectDir` 和当前 MCP 执行目录。当前 MCP 执行目录仅用于帮助用户判断目录是否传错,不会被用于搜索。AI 应让用户提供工作区目录或“氚云代码”目录,并将该目录作为新的 `projectDir` 重新调用。
 
 示例目录：
 
@@ -49,11 +49,11 @@ MCP 会在 `projectDir` 及其下级有限层级内查找 `cmax.json`，并只�
 C:\workspace\h3yun-projects
 └── 氚云代码
     ├── .h3token
-    └── 示例应用(a12345)
-        └── cmax.json
+    ├── cmax.json
+    └── 示例应用(a1a2b3c)
 ```
 
-如果当前工作区下有多个凭据完整的氚云应用目录，AI 应将 `projectDir` 精确传到目标应用目录，避免产生歧义。
+如果当前氚云代码目录下有多个应用,执行 SQL 时可直接将 `projectDir` 设为“氚云代码”目录,因为认证参数统一读取根 `cmax.json`。如果需要根据应用配置定位具体表单或字段,再将 `projectDir` 设为目标应用目录。
 
 ## 工具
 
@@ -73,8 +73,8 @@ C:\workspace\h3yun-projects
 
 行为规则：
 
-- `projectDir` 必填，值为当前 Agent 所在工作区目录或目标氚云应用目录的绝对路径。
-- `cmax.json` 从 `projectDir` 及其下级目录查找；`.h3token` 只从应用目录的父级“氚云代码”目录读取，不使用环境变量或其他隐式目录。
+- `projectDir` 必填,值为当前工作区目录或“氚云代码”目录的绝对路径。
+- 如果 `projectDir` 是“氚云代码”目录,只检查当前目录；否则只检查直接下一层的“氚云代码”目录。该目录必须同时存在根 `cmax.json` 和 `.h3token`。
 - 只允许以 `select` 或 `with` 开头的查询。实测 `show`、`describe`、`desc`、`explain` 会因氚云接口在 SQL 外层包装查询而执行失败。
 - SQL 末尾的分号会自动移除。
 - 用户未指定查询条数时，`select`/`with` 查询会默认追加 `LIMIT 20`。
@@ -89,9 +89,7 @@ C:\workspace\h3yun-projects
 工具默认调用氚云平台内置接口：
 
 - SQL 预览接口：`/rx-report/integrate/data-source/v1/customsql/previewSql`
-- 报表校验接口：`/Console/Reporting/OnAction`
-
-正式执行用户 SQL 前，工具会先通过报表校验接口查询 `System` 用户的 `ObjectId`，再用该用户上下文调用 SQL 预览接口。
+正式执行用户 SQL 前，工具优先读取根 `cmax.json` 中共享的 `systemUserId`；如果缺少该字段，会先通过报表接口查询 `System` 用户的 `ObjectId`，再用该用户上下文调用 SQL 预览接口。
 
 请求头使用：
 
@@ -103,7 +101,7 @@ C:\workspace\h3yun-projects
 
 AI 在查询前应优先读取项目中的：
 
-- `cmax.json`：确认表单名称和表单编码。
+- `cmax.json`：确认表单名称和表单编码，并读取根级共享的 `engineCode`、`systemUserId`。
 - `fields.md`：确认字段名称和控件编码。
 
 涉及系统表时，应参考氚云系统表说明文档：
