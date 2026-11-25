@@ -2,6 +2,40 @@
 
 一个给 AI 使用的氚云 SQL 查询 MCP 工具。AI 可以调用 `query_sql`，把只读 SQL 发送到氚云平台接口执行，并拿到真实数据结果；辅助排查氚云业务问题是它的典型使用场景之一。
 
+## 下载编译版（推荐，无需安装 Node）
+
+推送 tag 后，GitHub Actions 会自动编译并附加到 [Releases](https://github.com/chuck9090/h3yun-sql-troubleshooter/releases/latest) 页面。依赖已全部打包进单个文件，用户不需要安装 Node，也不需要执行 `npm install`。
+
+可下载的产物：
+
+| 文件 | 适用平台 | 是否需要 Node |
+| --- | --- | --- |
+| `h3yun-sql-troubleshooter-win32-x64.exe` | Windows x64 | 不需要 |
+| `h3yun-sql-troubleshooter-linux-x64` | Linux x64 | 不需要 |
+| `h3yun-sql-troubleshooter-darwin-x64` | macOS Intel | 不需要 |
+| `h3yun-sql-troubleshooter-darwin-arm64` | macOS Apple 芯片 | 不需要 |
+| `index.cjs` | 任意平台 | 需要 Node >= 18，但无需安装依赖 |
+
+下载后把可执行文件放到固定目录（路径不要带空格），MCP 配置改为直接指向它：
+
+```json
+{
+  "mcpServers": {
+    "h3yun-sql-troubleshooter": {
+      "command": "D:/tools/h3yun-sql-troubleshooter-win32-x64.exe"
+    }
+  }
+}
+```
+
+macOS / Linux 需要先赋予执行权限：
+
+```bash
+chmod +x ./h3yun-sql-troubleshooter-linux-x64
+```
+
+macOS 可能还需要解除隔离：`xattr -d com.apple.quarantine ./h3yun-sql-troubleshooter-darwin-arm64`。
+
 ## MCP 配置
 
 已发布到 npm 时，推荐这样配置：
@@ -107,6 +141,18 @@ AI 在查询前应优先读取项目中的：
 涉及系统表时，应参考氚云系统表说明文档：
 
 https://h3yunpro.github.io/docs/database/
+
+## 开发者：本地编译与发布
+
+```bash
+npm ci
+npm run build        # 生成 dist/h3yun-sql-troubleshooter-<平台>-<架构>[.exe]
+npm run test:smoke   # 启动可执行程序做一次 MCP 握手，确认可用
+```
+
+编译使用 Node 官方的 SEA（Single Executable Application）方案：先用 esbuild 把 `src/index.js` 与全部依赖打包成单个 `dist/index.cjs`，再把它注入当前平台的 Node 运行时，产出免安装的可执行文件。构建脚本见 `build/build-sea.mjs`。
+
+发布流程见 `.github/workflows/release.yml`：推送 `v*` 或数字开头的 tag（如 `v1.3.0`、`1.3.0`）会触发 Windows / Linux / macOS（x64 与 arm64）四个平台的编译，冒烟测试通过后自动创建 GitHub Release 并附加编译产物。GitHub 自动生成的源码压缩包仍会保留，但用户只需下载编译版即可使用。
 
 ## 许可证
 

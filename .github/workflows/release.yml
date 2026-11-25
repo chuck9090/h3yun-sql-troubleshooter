@@ -1,0 +1,117 @@
+name: 发布编译版程序
+
+# 推送 tag 时自动编译各平台可执行程序，并附加到 GitHub Release。
+# 用户下载后即可直接使用，不需要安装 Node，也不需要 npm install。
+
+on:
+  push:
+    tags:
+      - "v*"
+      - "[0-9]*"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    name: 编译 ${{ matrix.name }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: Windows x64
+            os: windows-latest
+          - name: Linux x64
+            os: ubuntu-latest
+          - name: macOS x64
+            os: macos-15-intel
+          - name: macOS arm64
+            os: macos-15
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: 安装依赖
+        run: npm ci
+
+      - name: 编译单文件可执行程序
+        run: npm run build
+
+      - name: 冒烟测试（MCP 初始化握手）
+        run: npm run test:smoke
+
+      - name: 上传平台可执行程序
+        uses: actions/upload-artifact@v4
+        with:
+          name: binary-${{ matrix.os }}-${{ matrix.name }}
+          path: dist/h3yun-sql-troubleshooter-*
+          if-no-files-found: error
+
+      - name: 上传免安装依赖包（仅一次）
+        if: matrix.name == 'Linux x64'
+        uses: actions/upload-artifact@v4
+        with:
+          name: bundle
+          path: dist/index.cjs
+          if-no-files-found: error
+
+  release:
+    name: 发布到 GitHub Release
+    needs: build
+    # 手动触发（workflow_dispatch）时只编译不发布，必须由 tag 推送触发发布。
+    if: startsWith(github.ref, 'refs/tags/')
+    runs-on: ubuntu-latest
+    steps:
+      - name: 下载全部编译产物
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+          merge-multiple: true
+
+      - name: 列出产物
+        run: ls -lh artifacts
+
+      - name: 为可执行程序添加执行权限
+        run: chmod +x artifacts/h3yun-sql-troubleshooter-*
+
+      - name: 创建 Release 并附加编译版程序
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.ref_name }}
+          name: ${{ github.ref_name }}
+          generate_release_notes: true
+          body: |
+            ## 下载哪个？
+
+            本页附加的是编译好的程序，**已内置 Node 运行时和全部依赖，无需安装 Node 或执行 npm install**：
+
+            | 文件 | 适用平台 |
+            | --- | --- |
+            | `h3yun-sql-troubleshooter-win32-x64.exe` | Windows x64 |
+            | `h3yun-sql-troubleshooter-linux-x64` | Linux x64（需 `chmod +x`） |
+            | `h3yun-sql-troubleshooter-darwin-x64` | macOS Intel（需 `chmod +x`） |
+            | `h3yun-sql-troubleshooter-darwin-arm64` | macOS Apple 芯片（需 `chmod +x`） |
+            | `index.cjs` | 已有 Node 18+ 时可用的单文件版本，无需安装依赖 |
+
+            下载后在 MCP 配置里把 `command` 指向该文件即可：
+
+            ```json
+            {
+              "mcpServers": {
+                "h3yun-sql-troubleshooter": {
+                  "command": "D:/tools/h3yun-sql-troubleshooter-win32-x64.exe"
+                }
+              }
+            }
+            ```
+
+            下方的 “Source code” 压缩包是 GitHub 自动生成的源码，仅供开发参考，普通用户请直接下载上表中的编译版。
+          files: |
+            artifacts/h3yun-sql-troubleshooter-*
+            artifacts/index.cjs

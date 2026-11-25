@@ -1,6 +1,6 @@
 {
   "name": "h3yun-sql-troubleshooter",
-  "version": "1.2.1",
+  "version": "1.3.0",
   "description": "用于查询氚云 SQL 数据的 MCP 工具，也可辅助 AI 排查氚云业务问题。",
   "license": "GPL-3.0-only",
   "type": "module",
@@ -8,12 +8,19 @@
     "h3yun-sql-troubleshooter": "./src/index.js"
   },
   "scripts": {
-    "start": "node ./src/index.js"
+    "start": "node ./src/index.js",
+    "build": "node ./build/build-sea.mjs",
+    "build:bundle": "esbuild ./src/index.js --bundle --platform=node --target=node18 --format=cjs --outfile=dist/index.cjs",
+    "test:smoke": "node ./build/smoke-test.mjs"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.17.4"
   },
   "engines": {
     "node": ">=18"
+  },
+  "devDependencies": {
+    "esbuild": "^0.28.2",
+    "postject": "^1.0.0-alpha.6"
   }
 }

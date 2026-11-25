@@ -8,7 +8,7 @@ import { z } from "zod";
 
 const server = new McpServer({
   name: "h3yun-sql-troubleshooter",
-  version: "1.2.1",
+  version: "1.3.0",
 });
 
 const DEFAULT_H3YUN_BASE_URL = "https://www.h3yun.com";
@@ -488,13 +488,20 @@ function extractH3YunResult(body) {
   return body;
 }
 
-const transport = new StdioServerTransport();
+async function main() {
+  if (process.env.H3YUN_DEBUG_PROJECT_CONTEXT === "true") {
+    console.log(formatResult(maskProjectContext(loadProjectContext(process.argv[2]))));
+    return;
+  }
 
-if (process.env.H3YUN_DEBUG_PROJECT_CONTEXT === "true") {
-  console.log(formatResult(maskProjectContext(loadProjectContext(process.argv[2]))));
-} else {
+  const transport = new StdioServerTransport();
   await server.connect(transport);
 }
+
+main().catch((error) => {
+  console.error(error);
+  process.exit(1);
+});
 
 function maskProjectContext(projectContext) {
   if (!projectContext.token) {
